@@ -1,0 +1,74 @@
+package glfw_triangle
+
+import "base:runtime"
+import "core:fmt"
+import gl "vendor:OpenGL"
+import "vendor:glfw"
+
+WIDTH :: 1600
+HEIGHT :: 900
+TITLE :: "Triangle!"
+
+GL_MINOR_VERSION :: 3
+GL_MAJOR_VERSION :: 3
+
+// vertices := [?]f32{-0.5, -0.5, 0.0, 0.5, -0.5, 0.0, 0.0, 0.5, 0.0}
+
+// error_callback :: proc "c" (code: i32, desc: cstring) {
+// 	context = runtime.default_context()
+// 	fmt.eprintf("%s, %d", desc, code)
+// }
+
+// key_callback :: proc "c" (
+// 	window: glfw.WindowHandle,
+// 	key, scancode, action, mods: i32,
+// ) {
+// 	context = runtime.default_context()
+// 	switch key {
+// 	case glfw.KEY_ESCAPE, glfw.KEY_Q:
+// 		glfw.SetWindowShouldClose(window, true)
+// 	}
+// }
+
+main :: proc() {
+	glfw.SetErrorCallback(error_callback)
+
+	if !bool(glfw.Init()) {
+		fmt.eprintln("GLFW has failed to load.")
+		return
+	}
+	defer glfw.Terminate()
+
+	glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 3)
+	glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 3)
+
+	window_handle := glfw.CreateWindow(WIDTH, HEIGHT, TITLE, nil, nil)
+	if window_handle == nil {
+		fmt.eprintln("GLFW has failed to load the window.")
+		return
+	}
+	defer glfw.DestroyWindow(window_handle)
+
+	glfw.MakeContextCurrent(window_handle)
+	glfw.SwapInterval(1)
+
+	glfw.SetKeyCallback(window_handle, key_callback)
+
+	VBO: u32
+	gl.GenBuffers(1, &VBO)
+	gl.BindBuffer(GL_ARRAY_BUFFER, VBO)
+	gl.BufferData(
+		GL_ARRAY_BUFFER,
+		size_of(vertices),
+		raw_data(vertices[:]),
+		GL_STATIC_DRAW,
+	)
+
+	gl.load_shaders("shader.vert")
+
+	for !glfw.WindowShouldClose(window_handle) {
+
+		glfw.SwapBuffers(window_handle)
+		glfw.PollEvents()
+	}
+}
