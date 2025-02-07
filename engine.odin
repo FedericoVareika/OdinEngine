@@ -1,4 +1,4 @@
-package engine
+package OdinEngine
 
 import "core:fmt"
 import "core:math"
@@ -10,6 +10,7 @@ import "base:runtime"
 import gl "vendor:OpenGL"
 import "vendor:glfw"
 
+import "UI"
 import "utils"
 
 WIDTH :: 1080
@@ -20,74 +21,9 @@ GL_MINOR_VERSION :: 3
 GL_MAJOR_VERSION :: 3
 
 wireframe_mode := false
+rotating := false
 
 state: State
-
-error_callback :: proc "c" (code: i32, desc: cstring) {
-	context = runtime.default_context()
-	fmt.eprintf("%s, %d", desc, code)
-}
-
-framebuffer_size_callback :: proc "c" (
-	window: glfw.WindowHandle,
-	width, height: i32,
-) {
-	context = runtime.default_context()
-
-	{
-		using state
-		window.aspect_ratio = f32(width) / f32(height)
-		transforms.proj = linalg.matrix4_perspective(
-			window.fovy,
-			window.aspect_ratio,
-			window.near,
-			window.far,
-		)
-	}
-
-	gl.Viewport(0, 0, width, height)
-}
-
-key_callback :: proc "c" (
-	window: glfw.WindowHandle,
-	key, scancode, action, mods: i32,
-) {
-	context = runtime.default_context()
-
-	using glfw
-
-	mult: f32
-	if action == PRESS do mult = 1
-	else if action == RELEASE do mult = -1
-
-	switch key {
-	case KEY_ESCAPE, KEY_Q:
-		SetWindowShouldClose(window, true)
-	case KEY_T:
-		wireframe_mode = !wireframe_mode
-		gl.PolygonMode(gl.FRONT_AND_BACK, wireframe_mode ? gl.LINE : gl.FILL)
-	case KEY_SPACE:
-		state.camera.velocity.y += mult
-	case KEY_LEFT_SHIFT, KEY_RIGHT_SHIFT:
-		state.camera.velocity.y -= mult
-	case KEY_W:
-		state.camera.velocity.z -= mult
-	case KEY_A:
-		state.camera.velocity.x -= mult
-	case KEY_S:
-		state.camera.velocity.z += mult
-	case KEY_D:
-		state.camera.velocity.x += mult
-	case KEY_UP:
-		state.camera.angular_velocity.x += mult
-	case KEY_DOWN:
-		state.camera.angular_velocity.x -= mult
-	case KEY_LEFT:
-		state.camera.angular_velocity.y -= mult
-	case KEY_RIGHT:
-		state.camera.angular_velocity.y += mult
-	}
-}
 
 main :: proc() {
 	glfw.Init()
@@ -98,7 +34,6 @@ main :: proc() {
 		WindowHint(CONTEXT_VERSION_MAJOR, 3)
 		WindowHint(CONTEXT_VERSION_MINOR, 3)
 		WindowHint(OPENGL_PROFILE, OPENGL_CORE_PROFILE)
-
 		when ODIN_OS == .Darwin {
 			WindowHint(OPENGL_FORWARD_COMPAT, gl.TRUE)
 		}
@@ -113,6 +48,7 @@ main :: proc() {
 		}
 
 		glfw.MakeContextCurrent(window)
+		glfw.SetInputMode(window, glfw.CURSOR, glfw.CURSOR_NORMAL)
 	}
 	defer glfw.DestroyWindow(window)
 
@@ -121,7 +57,7 @@ main :: proc() {
 		gl.Enable(gl.DEPTH_TEST)
 
 		// Enable v-sync
-		// glfw.SwapInterval(1)
+		glfw.SwapInterval(1)
 	}
 
 	// Callbacks
@@ -130,6 +66,9 @@ main :: proc() {
 		SetErrorCallback(error_callback)
 		SetFramebufferSizeCallback(window, framebuffer_size_callback)
 		SetKeyCallback(window, key_callback)
+		SetCursorPosCallback(window, mouse_pos_callback)
+		SetMouseButtonCallback(window, mouse_button_callback)
+		SetScrollCallback(window, mouse_scroll_callback)
 	}
 
 	// State
@@ -161,21 +100,36 @@ main :: proc() {
 			window.near,
 			window.far,
 		)
+
+		mouse.sensitivity = 1
 	}
+
 
 	{
 		ok: bool
-		state.graphics.shaders["cube"], ok = create_shader_program("cube")
+		state.graphics.shaders["cube"], ok = utils.create_shader_program(
+			"cube",
+		)
 		if !ok do return
-		state.graphics.shaders["light_source"], ok = create_shader_program(
-			"light_source",
+
+		state.graphics.shaders["light_source"], ok =
+			utils.create_shader_program("light_source")
+		if !ok do return
+
+		state.graphics.shaders["rect"], ok = utils.create_shader_program(
+			"rect",
 		)
 		if !ok do return
 	}
 
+	// UI
+	{
+		UI.init(state.graphics.shaders["rect"])
+	}
+
 	// Texture parameters
-	init_stbi()
-	load_textures(texture_path, texture_filenames, &state.textures)
+	utils.init_stbi()
+	utils.load_textures(texture_path, texture_filenames, &state.textures)
 
 	// Vertex Array Object: https://learnopengl.com/Getting-started/Hello-Triangle
 	{
@@ -307,18 +261,22 @@ main :: proc() {
 		// Texture uniforms
 		shader := state.graphics.shaders["cube"]
 		UseProgram(shader)
-		set_val(shader, "light_color", light_color)
-		set_val(shader, "light.ambient", light_color * 0.3)
-		set_val(shader, "light.diffuse", light_color * 0.5)
-		set_val(shader, "light.specular", utils.Vec3f({1.0, 1.0, 1.0}))
-		set_f32(shader, "light.k_c", 1.0)
-		set_f32(shader, "light.k_l", 0.09)
-		set_f32(shader, "light.k_q", 0.032)
+		utils.set_val(shader, "light_color", light_color)
+		utils.set_val(shader, "light.ambient", light_color * 0.3)
+		utils.set_val(shader, "light.diffuse", light_color * 0.5)
+		utils.set_val(shader, "light.specular", utils.Vec3f({1.0, 1.0, 1.0}))
+		utils.set_f32(shader, "light.k_c", 1.0)
+		utils.set_f32(shader, "light.k_l", 0.09)
+		utils.set_f32(shader, "light.k_q", 0.032)
 		// set_f32(shader, "light.cutoff", math.cos(math.to_radians(f32(30.0))))
-		set_f32(shader, "light.cutoff", 0)
+		utils.set_f32(shader, "light.cutoff", 0)
 
-		set_val(shader, "material.diffuse", i32(utils.Texture.Container2))
-		set_val(
+		utils.set_val(
+			shader,
+			"material.diffuse",
+			i32(utils.Texture.Container2),
+		)
+		utils.set_val(
 			shader,
 			"material.specular",
 			i32(utils.Texture.Container2_specular),
@@ -326,9 +284,9 @@ main :: proc() {
 
 		shader = state.graphics.shaders["light_source"]
 		UseProgram(shader)
-		set_val(shader, "light_color", light_color)
+		utils.set_val(shader, "light_color", light_color)
 
-		// set_val(
+		// utils.set_val(
 		// 	state.graphics.shaders["cube"],
 		// 	"texture2",
 		// 	i32(utils.Texture.Awesomeface),
@@ -339,7 +297,7 @@ main :: proc() {
 
 	load_cubes()
 
-    load_light :: false 
+	load_light :: false
 
 	// Light source
 	if light_vec.w == 1 && load_light {
@@ -349,7 +307,7 @@ main :: proc() {
 		t = utils.translate(t, light_vec.xyz)
 		m.transform = t
 		m.VAO = state.graphics.VAOs["light_source"]
-		m.material = {0, state.graphics.shaders["light_source"]}
+		m.shader = state.graphics.shaders["light_source"]
 		append(&state.models, m)
 	}
 
@@ -357,11 +315,18 @@ main :: proc() {
 	fmt.println(state)
 	for !glfw.WindowShouldClose(window) {
 		process_input(window)
+		if state.mouse.last_action != .Idle {
+			fmt.println(state.mouse)
+		}
+		UI.update(state.mouse.last_action, state.mouse.pos)
 
 		update()
-		update_time()
 
 		render()
+
+		{
+			state.mouse.last_action = .Idle
+		}
 
 		// check and call events and swap the buffers
 		glfw.SwapBuffers(window)
@@ -400,7 +365,7 @@ load_cubes :: proc() {
 		t = utils.translate(t, positions[idx])
 		m.transform = t
 		m.VAO = state.graphics.VAOs["cube"]
-		m.material = {0, state.graphics.shaders["cube"]}
+		m.shader = state.graphics.shaders["cube"]
 	}
 
 	append(&state.models, ..models[:])
@@ -442,6 +407,12 @@ update :: proc() {
 			set_vec4(shader, "light.vector", {0.5, -0.5, 0, 1})
 		}
 	}
+
+	if UI.do_button("Do something", {{100, 100}, {50, 50}}, 1) {
+		fmt.println("Clicked button")
+	}
+
+	update_time()
 }
 
 update_time :: proc() {
@@ -463,7 +434,7 @@ render :: proc() {
 	for model, idx in state.models {
 		gl.BindVertexArray(model.VAO)
 
-		shader := model.material.shader
+		shader := model.shader
 		gl.UseProgram(shader)
 
 		if state.graphics.shaders["cube"] == shader {
@@ -473,24 +444,24 @@ render :: proc() {
 				),
 			)
 
-			obj_color: utils.Vec3f =  {
+			obj_color: utils.Vec3f = {
 				f32(math.sin(f32(idx) * 0.5)),
 				f32(math.cos(f32(idx) * 0.5)),
 				f32(math.tan(f32(idx) * 0.5)),
 			}
 
-			set_val(shader, "normal_matrix", normal_matrix)
+			utils.set_val(shader, "normal_matrix", normal_matrix)
 			// set_val(shader, "material.ambient", obj_color)
 			// set_val(shader, "material.diffuse", utils.Vec3f({1.0, 0.5, 0.31}))
 			// set_val(shader, "material.specular", utils.Vec3f({0.5, 0.5, 0.5}))
-			set_val(shader, "material.shininess", 32.0)
+			utils.set_val(shader, "material.shininess", 32.0)
 		}
 
 		// t := state.transforms.proj * state.transforms.view * model.transform
 
-		set_val(model.material.shader, "model", model.transform)
-		set_val(model.material.shader, "view", state.transforms.view)
-		set_val(model.material.shader, "projection", state.transforms.proj)
+		utils.set_val(model.shader, "model", model.transform)
+		utils.set_val(model.shader, "view", state.transforms.view)
+		utils.set_val(model.shader, "projection", state.transforms.proj)
 
 		for id, texture in state.textures {
 			ActiveTexture(TEXTURE0 + u32(texture))
@@ -505,6 +476,6 @@ render :: proc() {
 		)
 	}
 
-
-	gl.DrawElements(gl.TRIANGLES, len(indices) * 3, gl.UNSIGNED_INT, nil)
+	// gl.DrawElements(gl.TRIANGLES, len(indices) * 3, gl.UNSIGNED_INT, nil)
+	UI.render(state.window.size)
 }

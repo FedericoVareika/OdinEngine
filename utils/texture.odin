@@ -1,13 +1,10 @@
-package engine
+package utils
 
 import "core:fmt"
 import "core:strings"
 
 import gl "vendor:OpenGL"
 import stbi "vendor:stb/image"
-
-import "utils"
-
 
 init_stbi :: proc() {
 	stbi.set_flip_vertically_on_load(1)
@@ -59,10 +56,10 @@ load_texture :: proc(
 
 load_textures :: proc(
 	path: string,
-	filenames: [utils.Texture]string,
-	textures_out: ^[utils.Texture]u32,
+	filenames: [Texture]string,
+	textures_out: ^[Texture]u32,
 ) {
-	for filename, idx in texture_filenames {
+	for filename, idx in filenames {
 
 		pixel_format: i32 = gl.RGB
 		if filename[len(filename) - 3:] == "png" {

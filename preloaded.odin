@@ -1,4 +1,4 @@
-package engine
+package OdinEngine
 
 import "utils"
 
@@ -68,11 +68,11 @@ indices := [?]utils.Triangle {
 
 texture_path := "./assets/textures"
 texture_filenames := [utils.Texture]string {
-	// .Wall = "wall.jpg",
-	// .Container = "container.jpg",
+	.Wall = "wall.jpg",
+	.Container = "container.jpg",
     .Container2 = "container2.png",
     .Container2_specular = "container2_specular.png",
-	// .Awesomeface = "awesomeface.png",
+	.Awesomeface = "awesomeface.png",
 }
 
 light_vec: utils.Vec4f = {1.2, 1, 2, 1}

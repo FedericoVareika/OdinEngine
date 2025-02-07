@@ -10,12 +10,16 @@ Vec3b :: [3]bool
 
 Triangle :: [3]i32
 
+Rect :: struct {
+	pos, size: Vec2f,
+}
+
 Texture :: enum {
-	// Wall,
-	// Container,
+	Wall,
+	Container,
 	Container2,
-    Container2_specular,
-	// Awesomeface,
+	Container2_specular,
+	Awesomeface,
 }
 
 Direction :: enum {
@@ -49,16 +53,23 @@ Camera :: struct {
 }
 
 Model :: struct {
-	transform: Mat4,
-	material:  Material,
 	VAO:       u32,
+	transform: Mat4,
+	shader:    u32,
+	material:  Material,
 }
 
 Material :: struct {
-	texture: u32,
-	shader:  u32,
+	texture, diffuse_map, specular_map: u32,
 }
 
 Window :: struct {
+	size:                          Vec2f,
 	aspect_ratio, fovy, near, far: f32,
+}
+
+MouseAction :: enum {
+	Idle,
+	Down,
+	Up,
 }

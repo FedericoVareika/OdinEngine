@@ -3,11 +3,11 @@
 	"collections": [
         { "path": "./", "name": "root" },
         { 
-            "path": "/opt/homebrew/Cellar/odin/2025-01/libexec/core",
+            "path": "/home/federicovareika/.local/lib/Odin/core",
             "name": "core", 
         },
         { 
-            "path": "/opt/homebrew/Cellar/odin/2025-01/libexec/vendor",
+            "path": "/home/federicovareika/.local/lib/Odin/vendor",
             "name": "vendor", 
         },
 	],

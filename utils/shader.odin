@@ -1,4 +1,4 @@
-package engine
+package utils
 
 import "core:fmt"
 import "core:math/linalg"
@@ -6,8 +6,6 @@ import "core:os"
 import "core:strings"
 
 import gl "vendor:OpenGL"
-
-import "utils"
 
 get_shader :: proc(
 	shader_path: string,
@@ -131,6 +129,7 @@ create_shader_program :: proc {
 set_val :: proc {
 	set_int,
     set_f32,
+	set_vec2,
 	set_vec3,
 	set_vec4,
 	set_mat4,
@@ -145,21 +144,28 @@ set_f32 :: proc(shader_program: u32, name: cstring, value: f32) {
 	gl.Uniform1f(gl.GetUniformLocation(shader_program, name), value)
 }
 
-set_vec3 :: proc(shader_program: u32, name: cstring, value: utils.Vec3f) {
+set_vec2 :: proc(shader_program: u32, name: cstring, value: Vec2f) {
+	gl.Uniform2f(
+		gl.GetUniformLocation(shader_program, name),
+		value.x, value.y,
+	)
+}
+
+set_vec3 :: proc(shader_program: u32, name: cstring, value: Vec3f) {
 	gl.Uniform3f(
 		gl.GetUniformLocation(shader_program, name),
 		value.x, value.y, value.z,
 	)
 }
 
-set_vec4 :: proc(shader_program: u32, name: cstring, value: utils.Vec4f) {
+set_vec4 :: proc(shader_program: u32, name: cstring, value: Vec4f) {
 	gl.Uniform4f(
 		gl.GetUniformLocation(shader_program, name),
 		value.x, value.y, value.z, value.w,
 	)
 }
 
-set_mat4 :: proc(shader_program: u32, name: cstring, value: utils.Mat4) {
+set_mat4 :: proc(shader_program: u32, name: cstring, value: Mat4) {
 	flat := linalg.matrix_flatten(value)
 	gl.UniformMatrix4fv(
 		gl.GetUniformLocation(shader_program, name),
@@ -169,7 +175,7 @@ set_mat4 :: proc(shader_program: u32, name: cstring, value: utils.Mat4) {
 	)
 }
 
-set_mat3 :: proc(shader_program: u32, name: cstring, value: utils.Mat3) {
+set_mat3 :: proc(shader_program: u32, name: cstring, value: Mat3) {
 	flat := linalg.matrix_flatten(value)
 	gl.UniformMatrix3fv(
 		gl.GetUniformLocation(shader_program, name),

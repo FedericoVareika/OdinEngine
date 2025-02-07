@@ -1,4 +1,4 @@
-package engine
+package OdinEngine
 
 import "core:fmt"
 import "core:math"
@@ -32,7 +32,8 @@ move_camera :: proc(state: ^State) {
 	camera.position += delta_movement_global
 }
 
-rotate_camera :: proc(state: ^State) {
+
+rotate_camera_state :: proc(state: ^State) {
 	using state
 
 	if camera.angular_velocity == {0, 0, 0} do return
@@ -58,3 +59,25 @@ rotate_camera :: proc(state: ^State) {
 		}
 	}
 }
+
+rotate_camera_mouse :: proc(state: ^State, delta_x, delta_y: f32) {
+    delta_x_angle := delta_x * state.mouse.sensitivity
+    delta_y_angle := delta_y * state.mouse.sensitivity 
+
+	state.camera.euler_angles.yaw += linalg.to_radians(delta_x_angle)
+	state.camera.euler_angles.pitch -= linalg.to_radians(delta_y_angle)
+    
+	{
+		using state.camera.euler_angles
+
+        pitch = math.clamp(pitch, -linalg.PI / 2 + 0.01, linalg.PI / 2 - 0.01)
+
+		state.camera.direction = utils.Vec3f {
+			-math.cos(yaw) * math.cos(pitch),
+			-math.sin(pitch),
+			-math.sin(yaw) * math.cos(pitch),
+		}
+	}
+}
+
+rotate_camera :: proc {rotate_camera_state, rotate_camera_mouse}
