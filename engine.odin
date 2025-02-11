@@ -5,6 +5,7 @@ import "core:math"
 import "core:math/linalg"
 import "core:os"
 
+import "base:intrinsics"
 import "base:runtime"
 
 import gl "vendor:OpenGL"
@@ -55,6 +56,8 @@ main :: proc() {
 	{
 		gl.load_up_to(3, 3, glfw.gl_set_proc_address)
 		gl.Enable(gl.DEPTH_TEST)
+		gl.Enable(gl.BLEND)
+		gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
 
 		// Enable v-sync
 		glfw.SwapInterval(1)
@@ -93,6 +96,7 @@ main :: proc() {
 		window.fovy = linalg.to_radians(f32(100.0))
 		window.near = 0.1
 		window.far = 100
+        window.size = {f32(WIDTH), f32(HEIGHT)}
 
 		transforms.proj = linalg.matrix4_perspective(
 			window.fovy,
@@ -118,6 +122,11 @@ main :: proc() {
 
 		state.graphics.shaders["rect"], ok = utils.create_shader_program(
 			"rect",
+		)
+		if !ok do return
+
+		state.graphics.shaders["bezier"], ok = utils.create_shader_program(
+			"bezier",
 		)
 		if !ok do return
 	}
@@ -408,7 +417,11 @@ update :: proc() {
 		}
 	}
 
-	if UI.do_button("Do something", {{100, 100}, {50, 50}}, 1) {
+	if UI.do_button(
+		"Do something",
+		Rect({pos = {20, 20}, size = {100, 50}}),
+		1,
+	) {
 		fmt.println("Clicked button")
 	}
 
@@ -437,6 +450,7 @@ render :: proc() {
 		shader := model.shader
 		gl.UseProgram(shader)
 
+
 		if state.graphics.shaders["cube"] == shader {
 			normal_matrix: utils.Mat3 = utils.Mat3(
 				linalg.inverse_transpose(
@@ -454,7 +468,7 @@ render :: proc() {
 			// set_val(shader, "material.ambient", obj_color)
 			// set_val(shader, "material.diffuse", utils.Vec3f({1.0, 0.5, 0.31}))
 			// set_val(shader, "material.specular", utils.Vec3f({0.5, 0.5, 0.5}))
-			utils.set_val(shader, "material.shininess", 32.0)
+			utils.set_val(shader, "material.shininess", f32(32.0))
 		}
 
 		// t := state.transforms.proj * state.transforms.view * model.transform
@@ -477,5 +491,30 @@ render :: proc() {
 	}
 
 	// gl.DrawElements(gl.TRIANGLES, len(indices) * 3, gl.UNSIGNED_INT, nil)
+
 	UI.render(state.window.size)
+	render_bezier()
+}
+
+render_bezier :: proc() {
+	bezier := state.graphics.shaders["bezier"]
+	gl.UseProgram(bezier)
+
+	bezier_rect: utils.Rect = {
+		pos  = {state.window.size.x / 2, 0},
+		size = state.window.size / 2,
+	}
+	bezier_rect_norm := utils.position_rect(bezier_rect, state.window.size)
+	utils.set_val(bezier, "r_norm", bezier_rect_norm)
+	utils.set_val(bezier, "r_real", bezier_rect)
+
+	points := [?]utils.Vec2f{{0.25, 0.25}, {0.75, 0.75}, {0, 0}}
+    for &p in points {
+        // p = state.window.size * p
+    }
+
+	utils.set_val(bezier, "p", points[:])
+    // utils.set_val(bezier, "p[0]", points[0])
+
+	gl.DrawArrays(gl.TRIANGLES, 0, 6)
 }

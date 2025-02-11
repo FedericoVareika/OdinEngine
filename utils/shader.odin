@@ -1,8 +1,11 @@
 package utils
 
+import "base:intrinsics"
+
 import "core:fmt"
 import "core:math/linalg"
 import "core:os"
+import "core:reflect"
 import "core:strings"
 
 import gl "vendor:OpenGL"
@@ -126,61 +129,135 @@ create_shader_program :: proc {
 	create_shader_program_from_name,
 }
 
+set_int :: proc(shader_program: u32, name: string, value: i32) {
+	gl.Uniform1i(
+		gl.GetUniformLocation(
+			shader_program,
+			strings.unsafe_string_to_cstring(name),
+		),
+		value,
+	)
+}
+
+set_f32 :: proc(shader_program: u32, name: string, value: f32) {
+	gl.Uniform1f(
+		gl.GetUniformLocation(
+			shader_program,
+			strings.unsafe_string_to_cstring(name),
+		),
+		value,
+	)
+}
+
+set_vec2 :: proc(shader_program: u32, name: string, value: Vec2f) {
+	gl.Uniform2f(
+		gl.GetUniformLocation(
+			shader_program,
+			strings.unsafe_string_to_cstring(name),
+		),
+		value.x,
+		value.y,
+	)
+}
+
+set_vec3 :: proc(shader_program: u32, name: string, value: Vec3f) {
+	gl.Uniform3f(
+		gl.GetUniformLocation(
+			shader_program,
+			strings.unsafe_string_to_cstring(name),
+		),
+		value.x,
+		value.y,
+		value.z,
+	)
+}
+
+set_vec4 :: proc(shader_program: u32, name: string, value: Vec4f) {
+	gl.Uniform4f(
+		gl.GetUniformLocation(
+			shader_program,
+			strings.unsafe_string_to_cstring(name),
+		),
+		value.x,
+		value.y,
+		value.z,
+		value.w,
+	)
+}
+
+set_mat4 :: proc(shader_program: u32, name: string, value: Mat4) {
+	flat := linalg.matrix_flatten(value)
+	gl.UniformMatrix4fv(
+		gl.GetUniformLocation(
+			shader_program,
+			strings.unsafe_string_to_cstring(name),
+		),
+		1,
+		false,
+		raw_data(&flat),
+	)
+}
+
+set_mat3 :: proc(shader_program: u32, name: string, value: Mat3) {
+	flat := linalg.matrix_flatten(value)
+	gl.UniformMatrix3fv(
+		gl.GetUniformLocation(
+			shader_program,
+			strings.unsafe_string_to_cstring(name),
+		),
+		1,
+		false,
+		raw_data(&flat),
+	)
+}
+
+set_multiple :: proc(
+	shader_program: u32,
+	name: string,
+	values: []$T,
+) where intrinsics.type_is_slice(type_of(values)) {
+	builder, err := strings.builder_make_len(
+		len(name) + 10,
+		context.temp_allocator,
+	)
+	assert(err == .None)
+
+	strings.write_string(&builder, name)
+	strings.write_byte(&builder, '[')
+
+	for val, i in values {
+		chars_written := strings.write_int(&builder, i)
+		chars_written += strings.write_string(&builder, "]")
+
+		indexed_name := strings.to_string(builder)
+		set_val(shader_program, indexed_name, type_of(val)(val))
+		for _ in 0 ..< chars_written {
+			strings.pop_byte(&builder)
+		}
+	}
+}
+
+set_rect :: proc(shader_program: u32, name: string, value: Rect) {
+	set_val(
+		shader_program,
+		strings.concatenate({name, ".pos"}, context.temp_allocator),
+		value.pos,
+	)
+	set_val(
+		shader_program,
+		strings.concatenate({name, ".size"}, context.temp_allocator),
+		value.size,
+	)
+}
+
 set_val :: proc {
 	set_int,
-    set_f32,
+	set_multiple,
+	set_f32,
 	set_vec2,
 	set_vec3,
 	set_vec4,
 	set_mat4,
 	set_mat3,
-}
-
-set_int :: proc(shader_program: u32, name: cstring, value: i32) {
-	gl.Uniform1i(gl.GetUniformLocation(shader_program, name), value)
-}
-
-set_f32 :: proc(shader_program: u32, name: cstring, value: f32) {
-	gl.Uniform1f(gl.GetUniformLocation(shader_program, name), value)
-}
-
-set_vec2 :: proc(shader_program: u32, name: cstring, value: Vec2f) {
-	gl.Uniform2f(
-		gl.GetUniformLocation(shader_program, name),
-		value.x, value.y,
-	)
-}
-
-set_vec3 :: proc(shader_program: u32, name: cstring, value: Vec3f) {
-	gl.Uniform3f(
-		gl.GetUniformLocation(shader_program, name),
-		value.x, value.y, value.z,
-	)
-}
-
-set_vec4 :: proc(shader_program: u32, name: cstring, value: Vec4f) {
-	gl.Uniform4f(
-		gl.GetUniformLocation(shader_program, name),
-		value.x, value.y, value.z, value.w,
-	)
-}
-
-set_mat4 :: proc(shader_program: u32, name: cstring, value: Mat4) {
-	flat := linalg.matrix_flatten(value)
-	gl.UniformMatrix4fv(
-		gl.GetUniformLocation(shader_program, name),
-		1,
-		false,
-		raw_data(&flat),
-	)
-}
-
-set_mat3 :: proc(shader_program: u32, name: cstring, value: Mat3) {
-	flat := linalg.matrix_flatten(value)
-	gl.UniformMatrix3fv(
-		gl.GetUniformLocation(shader_program, name),
-		1,
-		false,
-		raw_data(&flat),
-	)
+    set_rect,
 }

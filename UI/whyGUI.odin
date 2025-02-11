@@ -61,7 +61,7 @@ do_button :: proc(label: string, r: utils.Rect, id: i32) -> bool {
 		ui_state.hot = button_id
 		if ui_state.mouse.last_action == .Down {
 			ui_state.active = button_id
-            fmt.println("hello")
+			fmt.println("hello")
 		}
 	}
 
@@ -84,7 +84,7 @@ update :: proc(
 	mouse_position: utils.Vec2f,
 ) {
 	clear(&ui_state.elems)
-    ui_state.hot = {}
+	ui_state.hot = {}
 	ui_state.mouse.last_action = last_mouse_action
 	ui_state.mouse.pos = mouse_position
 }
@@ -92,25 +92,24 @@ update :: proc(
 render :: proc(screen_size: utils.Vec2f) {
 	for elem in ui_state.elems {
 		color := ui_state.graphics.colors.base
-        if ui_state.hot == elem.id do color = ui_state.graphics.colors.hot
+		if ui_state.hot == elem.id do color = ui_state.graphics.colors.hot
 		if ui_state.active == elem.id do color = ui_state.graphics.colors.active
+
+		{
+			error := gl.GetError()
+			if error != 0 {
+				fmt.println(error)
+				panic("OpenGL error")
+			}
+		}
 
 		shader := ui_state.graphics.shader
 		gl.UseProgram(shader)
 
-		screen_pos := (elem.rect.pos / screen_size) - {0.5, 0.5}
-		screen_pos.y *= -1
-		screen_pos *= 2
-		screen_size := (elem.rect.size / screen_size)
-		screen_size.y *= -1
-		screen_size *= 2
+		screen_rect := utils.position_rect(elem.rect, screen_size)
 
-		// fmt.println("pos:", screen_pos)
-		// fmt.println("size:", screen_size)
-
-		utils.set_vec2(shader, "r.pos", screen_pos)
-		utils.set_vec2(shader, "r.size", screen_size)
-		utils.set_vec3(shader, "color", color)
+		utils.set_val(shader, "r", screen_rect)
+		utils.set_val(shader, "color", color)
 
 		gl.DrawArrays(gl.TRIANGLES, 0, 6)
 	}
