@@ -61,7 +61,6 @@ do_button :: proc(label: string, r: utils.Rect, id: i32) -> bool {
 		ui_state.hot = button_id
 		if ui_state.mouse.last_action == .Down {
 			ui_state.active = button_id
-			fmt.println("hello")
 		}
 	}
 

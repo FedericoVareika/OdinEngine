@@ -1,5 +1,6 @@
 package utils
 
+import "base:builtin"
 import "base:intrinsics"
 
 import "core:fmt"
@@ -129,6 +130,16 @@ create_shader_program :: proc {
 	create_shader_program_from_name,
 }
 
+set_bool :: proc(shader_program: u32, name: string, value: bool) {
+	gl.Uniform1i(
+		gl.GetUniformLocation(
+			shader_program,
+			strings.unsafe_string_to_cstring(name),
+		),
+		i32(value),
+	)
+}
+
 set_int :: proc(shader_program: u32, name: string, value: i32) {
 	gl.Uniform1i(
 		gl.GetUniformLocation(
@@ -149,14 +160,13 @@ set_f32 :: proc(shader_program: u32, name: string, value: f32) {
 	)
 }
 
-set_vec2 :: proc(shader_program: u32, name: string, value: Vec2f) {
+set_vec2 :: proc(shader_program: u32, name: string, value: [2]f32) {
 	gl.Uniform2f(
 		gl.GetUniformLocation(
 			shader_program,
 			strings.unsafe_string_to_cstring(name),
 		),
-		value.x,
-		value.y,
+		builtin.expand_values(value),
 	)
 }
 
@@ -166,9 +176,7 @@ set_vec3 :: proc(shader_program: u32, name: string, value: Vec3f) {
 			shader_program,
 			strings.unsafe_string_to_cstring(name),
 		),
-		value.x,
-		value.y,
-		value.z,
+		builtin.expand_values(value),
 	)
 }
 
@@ -178,10 +186,7 @@ set_vec4 :: proc(shader_program: u32, name: string, value: Vec4f) {
 			shader_program,
 			strings.unsafe_string_to_cstring(name),
 		),
-		value.x,
-		value.y,
-		value.z,
-		value.w,
+		builtin.expand_values(value),
 	)
 }
 
@@ -211,32 +216,6 @@ set_mat3 :: proc(shader_program: u32, name: string, value: Mat3) {
 	)
 }
 
-set_multiple :: proc(
-	shader_program: u32,
-	name: string,
-	values: []$T,
-) where intrinsics.type_is_slice(type_of(values)) {
-	builder, err := strings.builder_make_len(
-		len(name) + 10,
-		context.temp_allocator,
-	)
-	assert(err == .None)
-
-	strings.write_string(&builder, name)
-	strings.write_byte(&builder, '[')
-
-	for val, i in values {
-		chars_written := strings.write_int(&builder, i)
-		chars_written += strings.write_string(&builder, "]")
-
-		indexed_name := strings.to_string(builder)
-		set_val(shader_program, indexed_name, type_of(val)(val))
-		for _ in 0 ..< chars_written {
-			strings.pop_byte(&builder)
-		}
-	}
-}
-
 set_rect :: proc(shader_program: u32, name: string, value: Rect) {
 	set_val(
 		shader_program,
@@ -251,6 +230,7 @@ set_rect :: proc(shader_program: u32, name: string, value: Rect) {
 }
 
 set_val :: proc {
+    set_bool,
 	set_int,
 	set_multiple,
 	set_f32,
@@ -259,5 +239,30 @@ set_val :: proc {
 	set_vec4,
 	set_mat4,
 	set_mat3,
-    set_rect,
+	set_rect,
+}
+
+set_multiple :: proc(
+	shader_program: u32,
+	name: string,
+	values: []$T,
+) where intrinsics.type_is_slice(type_of(values)) {
+	builder, err := strings.builder_make_len_cap(
+        len=0,
+		cap=len(name) + 10,
+		allocator=context.temp_allocator,
+	)
+	assert(err == .None)
+
+	strings.write_string(&builder, name)
+	strings.write_byte(&builder, '[')
+
+	for val, i in values {
+		chars_written := strings.write_int(&builder, i)
+		chars_written += strings.write_string(&builder, "]")
+		set_val(shader_program, strings.to_string(builder), type_of(val)(val))
+		for _ in 0 ..< chars_written {
+			pop(&builder.buf)
+		}
+	}
 }

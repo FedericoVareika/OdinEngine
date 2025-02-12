@@ -26,6 +26,14 @@ rotating := false
 
 state: State
 
+opposite := false
+targeting: ^utils.Vec2f = nil
+b: [3]utils.Vec2f = {
+	{0.2 * WIDTH, 0.2 * HEIGHT},
+	{0.9 * WIDTH, 0.2 * HEIGHT},
+	{0.9 * WIDTH, 0.9 * HEIGHT},
+}
+
 main :: proc() {
 	glfw.Init()
 	defer glfw.Terminate()
@@ -96,7 +104,7 @@ main :: proc() {
 		window.fovy = linalg.to_radians(f32(100.0))
 		window.near = 0.1
 		window.far = 100
-        window.size = {f32(WIDTH), f32(HEIGHT)}
+		window.size = {f32(WIDTH), f32(HEIGHT)}
 
 		transforms.proj = linalg.matrix4_perspective(
 			window.fovy,
@@ -324,9 +332,6 @@ main :: proc() {
 	fmt.println(state)
 	for !glfw.WindowShouldClose(window) {
 		process_input(window)
-		if state.mouse.last_action != .Idle {
-			fmt.println(state.mouse)
-		}
 		UI.update(state.mouse.last_action, state.mouse.pos)
 
 		update()
@@ -422,7 +427,22 @@ update :: proc() {
 		Rect({pos = {20, 20}, size = {100, 50}}),
 		1,
 	) {
-		fmt.println("Clicked button")
+		opposite = !opposite
+	}
+
+	{
+		if targeting != nil {
+			targeting^ = state.mouse.pos
+		}
+	}
+
+	b_size: utils.Vec2f = {20, 20}
+	for &b_i, idx in b {
+		r := utils.Rect({b_i - (b_size / 2), b_size})
+		if UI.do_button("", r, i32(idx) + 2) {
+			if targeting == nil do targeting = &b_i
+			else do targeting = nil
+		}
 	}
 
 	update_time()
@@ -508,13 +528,16 @@ render_bezier :: proc() {
 	utils.set_val(bezier, "r_norm", bezier_rect_norm)
 	utils.set_val(bezier, "r_real", bezier_rect)
 
-	points := [?]utils.Vec2f{{0.25, 0.25}, {0.75, 0.75}, {0, 0}}
-    for &p in points {
-        // p = state.window.size * p
-    }
+	b_norm: [len(b)]utils.Vec2f
+	for b_i, idx in b {
+		b_norm[idx] = utils.normalize_coord(b_i, state.window.size)
+		b_norm[idx] = utils.center_coord(b_norm[idx])
+	}
 
-	utils.set_val(bezier, "p", points[:])
-    // utils.set_val(bezier, "p[0]", points[0])
+	// points := [?]utils.Vec2f{{0, 0}, {1, 0}, {1, 1}}
 
-	gl.DrawArrays(gl.TRIANGLES, 0, 6)
+	utils.set_val(bezier, "t", b_norm[:])
+	utils.set_val(bezier, "opposite", opposite)
+
+	gl.DrawArrays(gl.TRIANGLES, 0, 3)
 }
