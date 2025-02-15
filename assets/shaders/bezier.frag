@@ -44,11 +44,10 @@ void main() {
     clamp(pct_line, 0, 1);
     clamp(pct_points, 0, 1);
 
-    // float pct_area = step(uv.x * uv.x - uv.y, 0);
     float pct_area = step(uv.y * uv.y - uv.x, 0);
     if (opposite) {pct_area = 1 - pct_area;}
-    // float pct_area = step(st.x * st.x - st.y, 0);
-    // pct_area *= step(st.y * st.y - st.x, 0);
+    // float pct_area = step(0.01, abs(uv.y * uv.y - uv.x));
+    // if (opposite) {pct_area = 1 - pct_area;}
 
     gl_FragColor = vec4(
             vec3(pct_line, pct_points, pct_area),

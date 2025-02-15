@@ -6,12 +6,25 @@ Vec2f :: [2]f32
 Vec3f :: [3]f32
 Vec4f :: [4]f32
 
+Vec2i :: [2]i32
+Vec3i :: [3]i32
+Vec4i :: [4]i32
+
+Vec2u :: [2]u32
+Vec3u :: [3]u32
+Vec4u :: [4]u32
+
 Vec3b :: [3]bool
 
 Triangle :: [3]i32
 
 Rect :: struct {
 	pos, size: Vec2f,
+}
+
+Coordf :: struct {
+    p: Vec2f,
+    on_curve: b32,
 }
 
 Texture :: enum {

@@ -11,6 +11,7 @@ import "base:runtime"
 import gl "vendor:OpenGL"
 import "vendor:glfw"
 
+import ttf "TTFonting"
 import "UI"
 import "utils"
 
@@ -34,18 +35,25 @@ b: [3]utils.Vec2f = {
 	{0.9 * WIDTH, 0.9 * HEIGHT},
 }
 
+glyf_sbo: u32
+glyf: ttf.Glyf
+
 main :: proc() {
 	glfw.Init()
 	defer glfw.Terminate()
 
 	{
 		using glfw
-		WindowHint(CONTEXT_VERSION_MAJOR, 3)
+
+		when ODIN_OS == .Darwin { 	// Note(fede): some features probably are not compatible with macOS
+			WindowHint(CONTEXT_VERSION_MAJOR, 3)
+			WindowHint(OPENGL_FORWARD_COMPAT, gl.TRUE)
+		} else {
+			WindowHint(CONTEXT_VERSION_MAJOR, 4)
+		}
+
 		WindowHint(CONTEXT_VERSION_MINOR, 3)
 		WindowHint(OPENGL_PROFILE, OPENGL_CORE_PROFILE)
-		when ODIN_OS == .Darwin {
-			WindowHint(OPENGL_FORWARD_COMPAT, gl.TRUE)
-		}
 	}
 
 	window: glfw.WindowHandle
@@ -69,6 +77,9 @@ main :: proc() {
 
 		// Enable v-sync
 		glfw.SwapInterval(1)
+
+        gl.Enable(gl.VERTEX_PROGRAM_POINT_SIZE)
+        gl.Enable(gl.PROGRAM_POINT_SIZE)
 	}
 
 	// Callbacks
@@ -137,6 +148,11 @@ main :: proc() {
 			"bezier",
 		)
 		if !ok do return
+
+		state.graphics.shaders["font"], ok = utils.create_shader_program(
+			"font",
+		)
+		if !ok do return
 	}
 
 	// UI
@@ -164,6 +180,50 @@ main :: proc() {
 		)
 
 		state.graphics.VBOs["cube"] = VBO
+	}
+
+	{
+		glyf = ttf.parse_ttf("assets/fonts/Anonymous.ttf", 35)
+		coords := glyf.value.(ttf.SimpleGlyf).coords
+
+		bounding_rect: utils.Rect = {
+			pos  = {f32(glyf.description.x_min), f32(glyf.description.y_min)},
+			size = {
+				f32(glyf.description.x_max - glyf.description.x_min),
+				f32(glyf.description.y_max - glyf.description.y_min),
+			},
+		}
+        fmt.println(bounding_rect)
+
+		glyf_coordinates := make([]utils.Coordf, len(coords))
+
+		for &c, idx in glyf_coordinates {
+            c.on_curve = b32(coords[idx].on_curve)
+			coord_f: utils.Vec2f = {f32(coords[idx].x), f32(coords[idx].y)}
+            fmt.println(coord_f, coords[idx])
+            c.p = coord_f - bounding_rect.pos 
+            c.p /= bounding_rect.size
+            c.p -= {0.5, 0.5}
+            fmt.printf("%f,%f\n", c.p.x, c.p.y)
+		}
+        assert(len(glyf_coordinates) == 31)
+
+		using gl
+		defer BindBuffer(SHADER_STORAGE_BUFFER, 0)
+
+		SBO: u32
+		GenBuffers(1, &SBO)
+		BindBuffer(SHADER_STORAGE_BUFFER, SBO)
+		BufferData(
+			SHADER_STORAGE_BUFFER,
+			size_of(utils.Coordf) * len(glyf_coordinates),
+			raw_data(glyf_coordinates[:]),
+			STATIC_DRAW,
+		)
+		BindBufferBase(SHADER_STORAGE_BUFFER, 3, SBO)
+		glyf_sbo = SBO
+
+        
 	}
 
 	{
@@ -512,8 +572,9 @@ render :: proc() {
 
 	// gl.DrawElements(gl.TRIANGLES, len(indices) * 3, gl.UNSIGNED_INT, nil)
 
-	UI.render(state.window.size)
-	render_bezier()
+	// UI.render(state.window.size)
+	// render_bezier()
+	render_glyf()
 }
 
 render_bezier :: proc() {
@@ -540,4 +601,11 @@ render_bezier :: proc() {
 	utils.set_val(bezier, "opposite", opposite)
 
 	gl.DrawArrays(gl.TRIANGLES, 0, 3)
+}
+
+render_glyf :: proc() {
+	font := state.graphics.shaders["font"]
+	gl.UseProgram(font)
+	gl.DrawArrays(gl.POINTS, 0, 31)
+    // gl.DrawBuffer(glyf_sbo)
 }
