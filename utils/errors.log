@@ -1,0 +1,14 @@
+/home/federicovareika/Projects/OdinEngine/utils/delauney.odin[0m[INFO ] --- [0m[2025-02-16 00:10:01] Starting test runner with 1 thread. Set with -define:ODIN_TEST_THREADS=n.
+[0m[INFO ] --- [0m[2025-02-16 00:10:01] The random seed sent to every test is: 144927265209109. Set with -define:ODIN_TEST_RANDOM_SEED=n.
+[0m[INFO ] --- [0m[2025-02-16 00:10:01] Memory tracking is enabled. Tests will log their memory usage if there's an issue.
+[0m[INFO ] --- [0m[2025-02-16 00:10:01] < Final Mem/ Total Mem> <  Peak Mem> (#Free/Alloc) :: [package.test_name]
+(278:26) Invalid slice indices 0:-3 is out of range 0..<5
+[31m[FATAL] --- [0m[2025-02-16 00:10:01] Caught signal to stop test #0 utils.test_sort for: Illegal_Instruction.
+[33m[WARN ] --- [0m[2025-02-16 00:10:01] <       40B/       40B> <       40B> (    0/    1) :: utils.test_sort
+        +++ leak        40B @ 0x7CA4F8400048 [delauney.odin:308:test_sort()]
+Finished 1 test in 20.762869ms. The test [31mfailed.[0m
+ - utils.test_sort 	Signal caught: Illegal_Instruction
+
+Signals were raised during this test run. Log messages are likely to have collided with each other.
+To partly mitigate this, redirect STDERR to a file or use the -define:ODIN_TEST_FANCY=false option.
+
