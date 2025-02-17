@@ -16,7 +16,7 @@ Vec4u :: [4]u32
 
 Vec3b :: [3]bool
 
-Triangle :: [3]i32
+Triangle :: distinct [3]i32
 
 Rect :: struct {
 	pos, size: Vec2f,

@@ -43,14 +43,21 @@ State :: struct($E: u32, $V: u32) where E < 1000,
 State :: struct {
 	edges:          []EdgePtr,
 	data:           []VertPtr,
-	vertices:       []Vec2f,
 	next_edge:      EdgePtr,
 	available_edge: EdgePtr,
+	vertices:       []Vec2f,
+	mappings:       []int,
 }
 
 // @(private = "file")
 @(private)
 state: State
+
+@(require_results)
+get_vert :: #force_inline proc(v: VertPtr) -> Vec2f {
+	// return state.vertices[state.mappings[v]]
+	return state.vertices[v]
+}
 
 @(require_results)
 rot_1 :: #force_inline proc(e: EdgePtr) -> EdgePtr {
@@ -69,18 +76,23 @@ rot :: proc {
 }
 
 @(require_results)
+rot_inv :: #force_inline proc(e: EdgePtr) -> EdgePtr {
+	return rot_n(e, 3)
+}
+
+@(require_results)
 o_next :: #force_inline proc(e: EdgePtr) -> EdgePtr {
 	return state.edges[e]
 }
 
 @(require_results)
 l_next :: #force_inline proc(e: EdgePtr) -> EdgePtr {
-	return rot(o_next(rot(e, -1)))
+	return rot(o_next(rot_inv(e)))
 }
 
 @(require_results)
 r_next :: #force_inline proc(e: EdgePtr) -> EdgePtr {
-	return rot(o_next(rot(e)), -1)
+	return rot_inv(o_next(rot(e)))
 }
 
 @(require_results)
@@ -110,15 +122,15 @@ r_prev :: #force_inline proc(e: EdgePtr) -> EdgePtr {
 
 @(require_results)
 d_prev :: #force_inline proc(e: EdgePtr) -> EdgePtr {
-	return rot(o_next(rot(e, -1)), -1)
+	return rot_inv(o_next(rot_inv(e)))
 }
 
 orig :: #force_inline proc(e: EdgePtr) -> ^VertPtr {
-	return &state.data[e / 4]
+	return &state.data[e / 2]
 }
 
 dest :: #force_inline proc(e: EdgePtr) -> ^VertPtr {
-	return &state.data[sym(e) / 4]
+	return &state.data[sym(e) / 2]
 }
 
 @(require_results)
@@ -246,9 +258,15 @@ incircle_vec2 :: proc(pts: [4]Vec2f) -> bool {
 incircle_ptr :: proc(pts: [4]VertPtr) -> bool {
 	pts_vec2: [4]Vec2f
 	for &p, i in pts_vec2 {
-		p = state.vertices[pts[i]]
+		p = get_vert(pts[i])
+		// state.vertices[state.mappings[pts[i]]]
 	}
 	return incircle_vec2(pts_vec2)
+}
+
+@(require_results)
+incircle_expand_ptr :: #force_inline proc(p1, p2, p3, p4: VertPtr) -> bool {
+	return incircle_ptr({p1, p2, p3, p4})
 }
 
 @(require_results)
@@ -262,15 +280,24 @@ ccw_vec2 :: proc(a, b, c: Vec2f) -> bool {
 
 @(require_results)
 ccw_ptr :: proc(A, B, C: VertPtr) -> bool {
-	a := state.vertices[A]
-	b := state.vertices[B]
-	c := state.vertices[C]
+	a := get_vert(A)
+	b := get_vert(B)
+	c := get_vert(C)
+	// a := state.vertices[state.mappings[A]]
+	// b := state.vertices[state.mappings[B]]
+	// c := state.vertices[state.mappings[C]]
 	return ccw_vec2(a, b, c)
 }
 
 @(require_results)
 right_of_vec2 :: proc(x: Vec2f, e: EdgePtr) -> bool {
-	return ccw(x, state.vertices[dest(e)^], state.vertices[orig(e)^])
+	return ccw(
+		x,
+		get_vert(dest(e)^),
+		get_vert(orig(e)^),
+		// state.vertices[state.mappings[dest(e)^]],
+		// state.vertices[state.mappings[orig(e)^]],
+	)
 }
 
 @(require_results)
@@ -280,12 +307,18 @@ right_of_ptr :: proc(x: VertPtr, e: EdgePtr) -> bool {
 
 @(require_results)
 left_of_vec2 :: proc(x: Vec2f, e: EdgePtr) -> bool {
-	return ccw(x, state.vertices[orig(e)^], state.vertices[dest(e)^])
+	// return ccw(x, state.vertices[orig(e)^], state.vertices[dest(e)^])
+	return ccw(x, get_vert(orig(e)^), get_vert(dest(e)^))
 }
 
 @(require_results)
 left_of_ptr :: proc(x: VertPtr, e: EdgePtr) -> bool {
 	return ccw(x, orig(e)^, dest(e)^)
+}
+
+@(require_results)
+valid :: proc(cand, base_l: EdgePtr) -> bool {
+	return ccw(orig(base_l)^, dest(cand)^, dest(base_l)^)
 }
 
 ccw :: proc {
@@ -302,32 +335,47 @@ left_of :: proc {
 }
 incircle :: proc {
 	incircle_ptr,
+	incircle_expand_ptr,
 	incircle_vec2,
 }
 
-partition :: proc(l, u: int) -> int {
-	pivot := state.vertices[u]
+init_mappings :: proc() {
+	for &m, i in state.mappings do m = i
+}
+
+switch_places :: proc(#any_int i, j: int) {
+	{
+		temp := state.vertices[j]
+		state.vertices[j] = state.vertices[i]
+		state.vertices[i] = temp
+	}
+	{
+		temp := state.mappings[j]
+		state.mappings[j] = state.mappings[i]
+		state.mappings[i] = temp
+	}
+}
+
+partition :: proc(#any_int l, u: int) -> VertPtr {
+	pivot := get_vert(VertPtr(u))
 	i := l
 
-	for &v in state.vertices[l:u - l + 1] {
+	fmt.println(l, u)
+	for &v, j in state.vertices[l:u + 1] {
 		if v.x < pivot.x || (v.x == pivot.x && v.y < pivot.y) {
-			temp := v
-			v = state.vertices[i]
-			state.vertices[i] = temp
+			switch_places(i, j + l)
 			i += 1
 		}
 	}
 
-	temp := state.vertices[u]
-	state.vertices[u] = state.vertices[i]
-	state.vertices[i] = temp
+	switch_places(i, u)
 
-	return i
+	return VertPtr(i)
 }
 
-quick_sort :: proc(l, u: int) {
-	fmt.println(l, u)
-	fmt.println(l, u)
+quick_sort :: proc(#any_int l, u: int) {
+	// fmt.println(l, u)
+	// fmt.println(l, u)
 	if l >= u do return
 
 	pivot := partition(l, u)
@@ -335,48 +383,229 @@ quick_sort :: proc(l, u: int) {
 	quick_sort(pivot + 1, u)
 }
 
-import "core:fmt"
-import "core:testing"
-@(test)
-test_sort :: proc(_: ^testing.T) {
-	n_vertices := 5
-	state.vertices = make([]Vec2f, n_vertices)
-	defer delete_slice(state.vertices)
-	state.vertices = {{1, 1}, {0, 1}, {1, 0}, {3, 2}, {2, 1}}
-	delete_slice(state.vertices)
-	fmt.println(state.vertices)
-	quick_sort(0, n_vertices - 1)
-	fmt.println(state.vertices)
-}
+// @(test)
+// test_sort :: proc(_: ^testing.T) {
+// 	n_vertices := 5
+// 	state.vertices = make([]Vec2f, n_vertices)
+// 	defer delete_slice(state.vertices)
+// 	state.vertices = {{1, 1}, {0, 1}, {1, 0}, {3, 2}, {2, 1}}
+// 	delete_slice(state.vertices)
+// 	fmt.println(state.vertices)
+// 	quick_sort(0, n_vertices - 1)
+// 	fmt.println(state.vertices)
+// }
 
-delaunay :: proc(offset: int = 0, set: []Vec2f) -> (le, re: EdgePtr) {
+delaunay :: proc(set: []int, offset: i32 = 0) -> (le, re: EdgePtr) {
 	switch len(set) {
 	case 2:
+		log.info("hihi")
 		a := make_edge(offset, offset + 1)
 		return a, sym(a)
 	case 3:
+		log.info("hihi3")
 		a := make_edge(offset, offset + 1)
 		b := make_edge(offset + 1, offset + 2)
 		splice(sym(a), b)
-		if ccw(set[0], set[1], set[2]) {
+		if ccw(
+			state.vertices[set[0]],
+			state.vertices[set[1]],
+			state.vertices[set[2]],
+		) {
 			c := connect(b, a)
 			return a, sym(b)
-		} else if ccw(set[0], set[2], set[1]) {
+		} else if ccw(
+			state.vertices[set[0]],
+			state.vertices[set[2]],
+			state.vertices[set[1]],
+		) {
 			c := connect(b, a)
 			return sym(c), c
 		} else do return a, sym(b)
 	case:
+		log.info("hihi>=4")
 		L := set[0:len(set) / 2]
 		R := set[len(set) / 2:]
 		ldo, ldi := delaunay(L)
-		rdi, rdo := delaunay(offset = len(set) / 2, L)
+		rdi, rdo := delaunay(R, offset = offset + i32(len(set) / 2))
 
-        // Compute the lower common tangent of L and R
-        for {
-            if left_of(orig(rdi)^, ldi) do ldi = l_next(ldi) 
-            else if left_of(orig(ldi)^, rdi) do rdi = r_prev(rdi) 
-            else do break
-        }
+		// Compute the lower common tangent of L and R
+		for {
+			if left_of(orig(rdi)^, ldi) do ldi = l_next(ldi)
+			else if right_of(orig(ldi)^, rdi) do rdi = r_prev(rdi)
+			else do break
+		}
 
+		// Create first cross edge base_l from rdi.orig to ldi.orig
+		base_l := connect(sym(rdi), ldi)
+		if orig(ldi)^ == orig(ldo)^ do ldo = sym(base_l)
+		if orig(rdi)^ == orig(rdo)^ do rdo = base_l
+
+		merge_loop: for {
+			// Locate the first L point (l_cand.dest) to be encountered by the
+			// rising bubble and delete L edges of base_l.dest that fail the 
+			// circle test
+			l_cand := o_next(sym(base_l))
+			if valid(l_cand, base_l) { 	// valid
+				for incircle(
+					    dest(base_l)^,
+					    orig(base_l)^,
+					    dest(l_cand)^,
+					    dest(o_next(l_cand))^,
+				    ) {
+					t := o_next(l_cand)
+					delete_edge(l_cand)
+					l_cand = t
+				}
+			}
+
+			// Symmetrically, locate the first R point to be hit, delete the rest
+			r_cand := o_prev(base_l)
+			if valid(r_cand, base_l) { 	// valid
+				for incircle(
+					    dest(base_l)^,
+					    orig(base_l)^,
+					    dest(r_cand)^,
+					    dest(o_prev(r_cand))^,
+				    ) {
+					t := o_prev(r_cand)
+					delete_edge(r_cand)
+					r_cand = t
+				}
+			}
+
+			// If both are invalid, then base_l is the upper common tangent
+			if !valid(l_cand, base_l) && !valid(r_cand, base_l) {
+				break merge_loop
+			}
+
+			right_is_delaunay :=
+				!valid(l_cand, base_l) ||
+				(valid(r_cand, base_l) &&
+						incircle(
+							dest(l_cand)^,
+							orig(l_cand)^,
+							orig(r_cand)^,
+							dest(r_cand)^,
+						))
+			if right_is_delaunay do base_l = connect(r_cand, sym(base_l))
+			else do base_l = connect(sym(base_l), sym(l_cand)) // l_cand is delaunay
+		}
+		return ldo, rdo
 	}
 }
+
+traverse_triangles :: proc(dest: ^[dynamic]Triangle) {
+	visited_edges := make(map[EdgePtr]bool, context.temp_allocator)
+    fmt.println(state.next_edge)
+	main_loop: for i in 0 ..< state.next_edge / 4 {
+		e := state.edges[i * 4]
+        if e == state.available_edge {
+            state.available_edge = o_next(state.available_edge)
+            continue
+        } 
+		half_edge: for _ in 0 ..< 2 {
+			defer e = sym(e)
+			if visited_edges[e] do continue
+
+			current_edge := e
+			new_tri: Triangle
+			triangle: for tri_idx in 0 ..< 3 {
+				visited_edges[current_edge] = true
+				new_tri[tri_idx] = i32(state.mappings[orig(current_edge)^])
+				// new_tri[tri_idx] = orig(current_edge)^
+				// if current_edge == l_next(current_edge) do continue half_edge
+				current_edge = l_next(current_edge)
+			}
+			if e != current_edge do continue
+
+			{ 	// ccw to cw
+				t := new_tri[0]
+				new_tri[0] = new_tri[2]
+				new_tri[2] = t
+			}
+
+			append(dest, new_tri)
+		}
+	}
+}
+
+triangulate_vertices :: proc(
+	vertices: []Vec2f,
+	/*TODO: put constraints here*/
+) -> (
+	triangles: []Triangle,
+) {
+	{ 	// init state
+		state.vertices = make([]Vec2f, len(vertices))
+		copy_slice(state.vertices, vertices)
+		state.mappings = make([]int, len(vertices))
+		init_mappings()
+
+		n_edges := len(vertices) * len(vertices)
+
+		state.edges = make([]EdgePtr, n_edges * 4)
+		state.data = make([]EdgePtr, n_edges * 2)
+
+		state.next_edge = 0
+		state.available_edge = NIL
+	}
+
+	defer { 	// de-init state
+		delete(state.vertices)
+		delete(state.mappings)
+		delete(state.edges)
+		delete(state.data)
+	}
+
+	{ 	// sort vertices
+		quick_sort(0, len(vertices) - 1)
+	}
+
+	le, re := delaunay(state.mappings)
+
+	log.info(state.edges[:state.next_edge])
+	log.info(state.data[:state.next_edge / 2])
+	log.info(state.mappings)
+
+	fmt.println("edges:", state.edges[:state.next_edge])
+	fmt.println("data:", state.data[:state.next_edge / 2])
+	fmt.println("mappings:", state.mappings)
+
+	triangles_dyn := make([dynamic]Triangle)
+	traverse_triangles(&triangles_dyn)
+	resize_dynamic_array(&triangles_dyn, len(triangles_dyn))
+
+	return triangles_dyn[:]
+}
+
+@(test)
+traversal_test :: proc(_: ^testing.T) {
+	// n_vertices := 5
+	// n_edges_max := 100
+	vertices := [?]Vec2f{
+        {0, 0},
+        {1, 0},
+        {2, 0},
+        {3, 0},
+        {0, 1},
+        {1, 1},
+        {2, 1},
+        {3, 1},
+        {0, 2},
+        {1, 2},
+        {2, 2},
+        {3, 2},
+        {0, 3},
+        {1, 3},
+        {2, 3},
+        {3, 3},
+    }
+
+	triangles := triangulate_vertices(vertices[:])
+	log.info(triangles)
+}
+
+import "core:fmt"
+import "core:log"
+import "core:os"
+import "core:testing"

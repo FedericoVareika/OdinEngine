@@ -35,7 +35,10 @@ b: [3]utils.Vec2f = {
 	{0.9 * WIDTH, 0.9 * HEIGHT},
 }
 
-glyf_sbo: u32
+glyf_vec_sbo: u32
+glyf_on_curves_sbo: u32
+glyf_indices_sbo: u32
+glyf_triangles: []utils.Triangle
 glyf: ttf.Glyf
 
 main :: proc() {
@@ -183,7 +186,8 @@ main :: proc() {
 	}
 
 	{
-		glyf = ttf.parse_ttf("assets/fonts/Anonymous.ttf", 35)
+		// glyf = ttf.parse_ttf("assets/fonts/Anonymous.ttf", 8)
+		glyf = ttf.parse_ttf("assets/fonts/Anonymous.ttf", 42)
 		coords := glyf.value.(ttf.SimpleGlyf).coords
 
 		bounding_rect: utils.Rect = {
@@ -195,35 +199,87 @@ main :: proc() {
 		}
         fmt.println(bounding_rect)
 
-		glyf_coordinates := make([]utils.Coordf, len(coords))
+		// glyf_coordinates := make([]utils.Coordf, len(coords))
+        glyf_vertices := make([]utils.Vec2f, len(coords)) 
+        glyf_on_curves := make([]b32, len(coords)) 
 
-		for &c, idx in glyf_coordinates {
-            c.on_curve = b32(coords[idx].on_curve)
+		for &v, idx in glyf_vertices {
 			coord_f: utils.Vec2f = {f32(coords[idx].x), f32(coords[idx].y)}
             fmt.println(coord_f, coords[idx])
-            c.p = coord_f - bounding_rect.pos 
-            c.p /= bounding_rect.size
-            c.p -= {0.5, 0.5}
-            fmt.printf("%f,%f\n", c.p.x, c.p.y)
+            v = coord_f - bounding_rect.pos 
+            v /= bounding_rect.size
+            v -= {0.5, 0.5}
+            fmt.printf("%f,%f\n", v.x, v.y)
 		}
-        assert(len(glyf_coordinates) == 31)
+
+        for &c, idx in glyf_on_curves {
+            c = b32(coords[idx].on_curve)
+        }
+
+        fmt.println(len(glyf_vertices))
+        assert(len(glyf_vertices) == 12)
+        // assert(len(glyf_vertices) == 4)
+
+        glyf_triangles = utils.triangulate_vertices(glyf_vertices)
+        fmt.println("glyf_triangles", glyf_triangles)
 
 		using gl
 		defer BindBuffer(SHADER_STORAGE_BUFFER, 0)
 
-		SBO: u32
-		GenBuffers(1, &SBO)
-		BindBuffer(SHADER_STORAGE_BUFFER, SBO)
+		SBOs: [3]u32
+		GenBuffers(3, &SBOs[0])
+        fmt.println(SBOs)
+
+		BindBuffer(SHADER_STORAGE_BUFFER, SBOs[0])
 		BufferData(
 			SHADER_STORAGE_BUFFER,
-			size_of(utils.Coordf) * len(glyf_coordinates),
-			raw_data(glyf_coordinates[:]),
+			size_of(utils.Vec2f) * len(glyf_vertices),
+			raw_data(glyf_vertices[:]),
 			STATIC_DRAW,
 		)
-		BindBufferBase(SHADER_STORAGE_BUFFER, 3, SBO)
-		glyf_sbo = SBO
+		BindBufferBase(SHADER_STORAGE_BUFFER, 0, SBOs[0])
+		glyf_vec_sbo = SBOs[0]
 
-        
+		BindBuffer(SHADER_STORAGE_BUFFER, SBOs[1])
+		BufferData(
+			SHADER_STORAGE_BUFFER,
+			size_of(b32) * len(glyf_on_curves),
+			raw_data(glyf_on_curves[:]),
+			STATIC_DRAW,
+		)
+		BindBufferBase(SHADER_STORAGE_BUFFER, 1, SBOs[1])
+		glyf_on_curves_sbo = SBOs[1]
+
+		BindBuffer(SHADER_STORAGE_BUFFER, SBOs[2])
+		BufferData(
+			SHADER_STORAGE_BUFFER,
+			size_of(utils.Triangle) * len(glyf_triangles),
+			raw_data(glyf_triangles),
+			STATIC_DRAW,
+		)
+		BindBufferBase(SHADER_STORAGE_BUFFER, 2, SBOs[2])
+		glyf_indices_sbo = SBOs[2]
+
+        {
+            // Read back vertices SSBO
+            vertices_data := make([]utils.Vec2f, len(glyf_vertices))
+            BindBuffer(SHADER_STORAGE_BUFFER, SBOs[0])
+            gl.GetBufferSubData(SHADER_STORAGE_BUFFER, 0, size_of(utils.Vec2f) * len(glyf_vertices), raw_data(vertices_data))
+            fmt.println("Vertices SSBO:", vertices_data)
+
+            // Read back on_curves SSBO
+            on_curves_data := make([]b32, len(glyf_on_curves))
+            BindBuffer(SHADER_STORAGE_BUFFER, SBOs[1])
+            gl.GetBufferSubData(SHADER_STORAGE_BUFFER, 0, size_of(b32) * len(glyf_on_curves), raw_data(on_curves_data))
+            fmt.println("OnCurves SSBO:", on_curves_data)
+
+            // Read back indices SSBO
+            indices_data := make([]utils.Triangle, len(glyf_triangles))
+            BindBuffer(SHADER_STORAGE_BUFFER, SBOs[2])
+            gl.GetBufferSubData(SHADER_STORAGE_BUFFER, 0, size_of(utils.Triangle) * len(glyf_triangles), raw_data(indices_data))
+            fmt.println("Indices SSBO:", indices_data)
+
+        }
 	}
 
 	{
@@ -606,6 +662,8 @@ render_bezier :: proc() {
 render_glyf :: proc() {
 	font := state.graphics.shaders["font"]
 	gl.UseProgram(font)
-	gl.DrawArrays(gl.POINTS, 0, 31)
+	// gl.DrawElements(gl.TRIANGLES, i32(size_of(utils.Triangle) * (len(glyf_triangles)-1)), gl.UNSIGNED_INT, nil)
+	gl.DrawArrays(gl.POINTS, 0, 12)
+	// gl.DrawArrays(gl.TRIANGLES, 0, i32(len(glyf_triangles)) * 3)
     // gl.DrawBuffer(glyf_sbo)
 }
