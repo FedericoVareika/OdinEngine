@@ -19,6 +19,14 @@ void main() {
     vec2 vertex = vertices[index];
     bool on_curve = on_curves[index];
 
+    uint triangle = index / 3;
+
+color = vec3(
+        step(2, triangle++ % 3),
+        step(2, triangle++ % 3),
+        step(2, triangle % 3)
+        );
+
     // // Debug output
     // if (gl_VertexID == 0) {
     //     gl_Position = vec4(-1.0, -1.0, 0.0, 1.0); // Bottom-left corner
@@ -35,8 +43,10 @@ void main() {
     // }
 
     // gl_PointSize = 10.0;
+
     
-    color = vec3(on_curve, 0, 0);
+    // color = vec3(!on_curve, 0, on_curve);
+    // color = vec3(sin(float(index / 3) / 10), cos(float(index / 3) / 10), tan(float(index / 3) / 10));
     gl_Position = vec4(vertex, -0.2, 1);
     gl_PointSize = 10;
 }

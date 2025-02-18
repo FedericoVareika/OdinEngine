@@ -52,8 +52,12 @@ key_callback :: proc "c" (
 	case KEY_ESCAPE, KEY_Q:
 		SetWindowShouldClose(window, true)
 	case KEY_T:
-		wireframe_mode = !wireframe_mode
-		gl.PolygonMode(gl.FRONT_AND_BACK, wireframe_mode ? gl.LINE : gl.FILL)
+		if action == PRESS {wireframe_mode = !wireframe_mode
+			gl.PolygonMode(
+				gl.FRONT_AND_BACK,
+				wireframe_mode ? gl.LINE : gl.FILL,
+			)
+		}
 	case KEY_SPACE:
 		state.camera.velocity.y += mult
 	case KEY_LEFT_SHIFT, KEY_RIGHT_SHIFT:

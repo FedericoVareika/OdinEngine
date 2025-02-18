@@ -15,7 +15,7 @@ F2Dot14 :: bit_field i16be {
 	whole: i16be | 2,
 	frac:  i16be | 14,
 }
-LongDateTime :: u64be
+LongDateTime :: i64be
 
 TableTag :: enum {
 	none = 0,
@@ -38,12 +38,12 @@ TableTag :: enum {
 	prep,
 }
 
-OffsetSubtable :: struct {
+OffsetSubtable :: struct #packed {
 	scaler_type:                                           u32be,
 	num_tables, search_range, entry_selector, range_shift: u16be,
 }
 
-TableDirectory :: struct {
+TableDirectory :: struct #packed {
 	tag:                      [4]u8,
 	checksum, offset, length: u32be,
 }
@@ -107,7 +107,7 @@ CmapFormat4 :: struct {
     lbb: Left-most black bit
 */
 
-Head :: struct {
+Head :: struct #packed {
 	version, font_revision:     Fixed,
 	checksum_adj, magic_number: u32be,
 	flags:                      HeadFlags,
@@ -127,9 +127,9 @@ Head :: struct {
 		short_offsets = 0,
 		long_offsets  = 1,
 	},
-	glyph_data_fmt:             enum i16be {
-		current_format = 0,
-	},
+	// glyph_data_fmt:             enum i16be {
+	// 	current_format = 0,
+	// },
 }
 
 HeadFlags :: bit_set[HeadFlag;u16be]
@@ -140,8 +140,8 @@ HeadFlag :: enum u8 {
 	zero            = 6,
 }
 
-MacStyle :: bit_set[MacStyleEnum;u8]
-MacStyleEnum :: enum u8 {
+MacStyle :: bit_set[MacStyleEnum;u16]
+MacStyleEnum :: enum u16 {
 	bold,
 	italic,
 	underline,
@@ -157,7 +157,7 @@ FontDirectionHint :: enum i16be {}
 ------------Maxp-----------
  */
 
-Maxp :: struct {
+Maxp :: struct #packed {
 	version:   Fixed,
 	num_glyfs: u16be,
 }
@@ -187,12 +187,12 @@ Glyf :: struct {
 	},
 }
 
-GlyfDescription :: struct {
+GlyfDescription :: struct #packed {
 	n_contours:                 i16be,
 	x_min, y_min, x_max, y_max: FWord,
 }
 
-SimpleGlyf :: struct {
+SimpleGlyf :: struct #packed {
 	end_pts_of_contours: []u16be,
 	instruction_len:     u16be,
 	instructions:        []u8,
@@ -208,11 +208,13 @@ Coord :: struct {
 OutlineFlags :: bit_set[OutlineFlag;u8]
 OutlineFlag :: enum u8 {
 	on_curve = 0,
-	x_short_vec,
-	y_short_vec,
-	repeat,
-	same_x_or_positive_short,
-	same_y_or_positive_short,
+	x_short_vec = 1,
+	y_short_vec = 2,
+	repeat = 3,
+	same_x_or_positive_short = 4,
+	same_y_or_positive_short = 5,
+	zero1 = 6,
+	zero2 = 7,
 }
 
 CompoundGlyf :: struct {

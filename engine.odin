@@ -1,6 +1,7 @@
 package OdinEngine
 
 import "core:fmt"
+import "core:log"
 import "core:math"
 import "core:math/linalg"
 import "core:os"
@@ -42,6 +43,7 @@ glyf_triangles: []utils.Triangle
 glyf: ttf.Glyf
 
 main :: proc() {
+    context.logger = log.create_console_logger()
 	glfw.Init()
 	defer glfw.Terminate()
 
@@ -81,8 +83,8 @@ main :: proc() {
 		// Enable v-sync
 		glfw.SwapInterval(1)
 
-        gl.Enable(gl.VERTEX_PROGRAM_POINT_SIZE)
-        gl.Enable(gl.PROGRAM_POINT_SIZE)
+		gl.Enable(gl.VERTEX_PROGRAM_POINT_SIZE)
+		gl.Enable(gl.PROGRAM_POINT_SIZE)
 	}
 
 	// Callbacks
@@ -186,9 +188,20 @@ main :: proc() {
 	}
 
 	{
-		// glyf = ttf.parse_ttf("assets/fonts/Anonymous.ttf", 8)
-		glyf = ttf.parse_ttf("assets/fonts/Anonymous.ttf", 42)
+		glyf = ttf.parse_ttf("assets/fonts/JetBrainsMono-Thin.ttf", 26)
 		coords := glyf.value.(ttf.SimpleGlyf).coords
+		fmt.println(coords)
+		fmt.println(glyf.description)
+
+		end_contours : []u16
+        defer delete(end_contours)
+		{
+            end_contours_be := glyf.value.(ttf.SimpleGlyf).end_pts_of_contours
+            end_contours = make([]u16, len(end_contours_be))
+			for &c, idx in end_contours {
+				c = cast(u16)end_contours_be[idx]
+			}
+		}
 
 		bounding_rect: utils.Rect = {
 			pos  = {f32(glyf.description.x_min), f32(glyf.description.y_min)},
@@ -197,38 +210,45 @@ main :: proc() {
 				f32(glyf.description.y_max - glyf.description.y_min),
 			},
 		}
-        fmt.println(bounding_rect)
+		fmt.println(bounding_rect)
 
 		// glyf_coordinates := make([]utils.Coordf, len(coords))
-        glyf_vertices := make([]utils.Vec2f, len(coords)) 
-        glyf_on_curves := make([]b32, len(coords)) 
+		glyf_vertices := make([]utils.Vec2f, len(coords))
+		glyf_on_curves := make([]b32, len(coords))
 
 		for &v, idx in glyf_vertices {
 			coord_f: utils.Vec2f = {f32(coords[idx].x), f32(coords[idx].y)}
-            fmt.println(coord_f, coords[idx])
-            v = coord_f - bounding_rect.pos 
-            v /= bounding_rect.size
-            v -= {0.5, 0.5}
-            fmt.printf("%f,%f\n", v.x, v.y)
+			// fmt.printf("%f,%f\n", coord_f.x, coord_f.y)
+			// fmt.println(coord_f, coords[idx])
+			v = coord_f - bounding_rect.pos
+			v /= bounding_rect.size
+			v -= {0.5, 0.5}
+			fmt.printf("%f,%f\n", v.x, v.y)
 		}
 
-        for &c, idx in glyf_on_curves {
-            c = b32(coords[idx].on_curve)
-        }
+		for &c, idx in glyf_on_curves {
+			c = b32(coords[idx].on_curve)
+		}
 
-        fmt.println(len(glyf_vertices))
-        assert(len(glyf_vertices) == 12)
-        // assert(len(glyf_vertices) == 4)
+		fmt.println(len(glyf_vertices))
+		// assert(len(glyf_vertices) == 12)
+		// assert(len(glyf_vertices) == 4)
 
-        glyf_triangles = utils.triangulate_vertices(glyf_vertices)
-        fmt.println("glyf_triangles", glyf_triangles)
+		{
+			x, y, _ := soa_unzip(coords)
+			glyf_triangles = utils.triangulate_vertices(
+				soa_zip(x = x, y = y),
+				end_contours,
+			)
+			fmt.println("glyf_triangles", glyf_triangles)
+		}
 
 		using gl
 		defer BindBuffer(SHADER_STORAGE_BUFFER, 0)
 
 		SBOs: [3]u32
 		GenBuffers(3, &SBOs[0])
-        fmt.println(SBOs)
+		fmt.println(SBOs)
 
 		BindBuffer(SHADER_STORAGE_BUFFER, SBOs[0])
 		BufferData(
@@ -260,26 +280,41 @@ main :: proc() {
 		BindBufferBase(SHADER_STORAGE_BUFFER, 2, SBOs[2])
 		glyf_indices_sbo = SBOs[2]
 
-        {
-            // Read back vertices SSBO
-            vertices_data := make([]utils.Vec2f, len(glyf_vertices))
-            BindBuffer(SHADER_STORAGE_BUFFER, SBOs[0])
-            gl.GetBufferSubData(SHADER_STORAGE_BUFFER, 0, size_of(utils.Vec2f) * len(glyf_vertices), raw_data(vertices_data))
-            fmt.println("Vertices SSBO:", vertices_data)
+		{
+			// Read back vertices SSBO
+			vertices_data := make([]utils.Vec2f, len(glyf_vertices))
+			BindBuffer(SHADER_STORAGE_BUFFER, SBOs[0])
+			gl.GetBufferSubData(
+				SHADER_STORAGE_BUFFER,
+				0,
+				size_of(utils.Vec2f) * len(glyf_vertices),
+				raw_data(vertices_data),
+			)
+			fmt.println("Vertices SSBO:", vertices_data)
 
-            // Read back on_curves SSBO
-            on_curves_data := make([]b32, len(glyf_on_curves))
-            BindBuffer(SHADER_STORAGE_BUFFER, SBOs[1])
-            gl.GetBufferSubData(SHADER_STORAGE_BUFFER, 0, size_of(b32) * len(glyf_on_curves), raw_data(on_curves_data))
-            fmt.println("OnCurves SSBO:", on_curves_data)
+			// Read back on_curves SSBO
+			on_curves_data := make([]b32, len(glyf_on_curves))
+			BindBuffer(SHADER_STORAGE_BUFFER, SBOs[1])
+			gl.GetBufferSubData(
+				SHADER_STORAGE_BUFFER,
+				0,
+				size_of(b32) * len(glyf_on_curves),
+				raw_data(on_curves_data),
+			)
+			fmt.println("OnCurves SSBO:", on_curves_data)
 
-            // Read back indices SSBO
-            indices_data := make([]utils.Triangle, len(glyf_triangles))
-            BindBuffer(SHADER_STORAGE_BUFFER, SBOs[2])
-            gl.GetBufferSubData(SHADER_STORAGE_BUFFER, 0, size_of(utils.Triangle) * len(glyf_triangles), raw_data(indices_data))
-            fmt.println("Indices SSBO:", indices_data)
+			// Read back indices SSBO
+			indices_data := make([]utils.Triangle, len(glyf_triangles))
+			BindBuffer(SHADER_STORAGE_BUFFER, SBOs[2])
+			gl.GetBufferSubData(
+				SHADER_STORAGE_BUFFER,
+				0,
+				size_of(utils.Triangle) * len(glyf_triangles),
+				raw_data(indices_data),
+			)
+			fmt.println("Indices SSBO:", indices_data)
 
-        }
+		}
 	}
 
 	{
@@ -663,7 +698,8 @@ render_glyf :: proc() {
 	font := state.graphics.shaders["font"]
 	gl.UseProgram(font)
 	// gl.DrawElements(gl.TRIANGLES, i32(size_of(utils.Triangle) * (len(glyf_triangles)-1)), gl.UNSIGNED_INT, nil)
-	gl.DrawArrays(gl.POINTS, 0, 12)
-	// gl.DrawArrays(gl.TRIANGLES, 0, i32(len(glyf_triangles)) * 3)
-    // gl.DrawBuffer(glyf_sbo)
+	// gl.DrawArrays(gl.POINTS, 0, 12)
+	// gl.DrawArrays(gl.POINTS, 0, 17 * 3)
+	gl.DrawArrays(gl.TRIANGLES, 0, i32(len(glyf_triangles)) * 3)
+	// gl.DrawBuffer(glyf_sbo)
 }

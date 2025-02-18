@@ -1,6 +1,7 @@
 package ttfonting
 
 import "core:fmt"
+import "core:log"
 import "core:mem"
 import "core:os"
 import "core:strings"
@@ -19,9 +20,11 @@ value_from_data_offset :: #force_inline proc(
 	$T: typeid,
 ) -> (
 	res: T,
+	n_bytes: int,
 ) {
 	res = value_from_data(data^, idx, T)
-	data^ = data^[idx + size_of(T):]
+	n_bytes = idx + size_of(T)
+	data^ = data^[n_bytes:]
 	return
 }
 
@@ -31,6 +34,7 @@ slice_from_data :: #force_inline proc(
 	idx, len: int,
 	$T: typeid,
 ) -> []T {
+
 	return mem.slice_ptr((^T)(&data[idx]), len)
 }
 
@@ -41,9 +45,11 @@ slice_from_data_offset :: #force_inline proc(
 	$T: typeid,
 ) -> (
 	res: []T,
+	n_bytes: int,
 ) {
 	res = slice_from_data(data^, idx, len, T)
-	data^ = data^[idx + size_of(T) * len:]
+	n_bytes = idx + size_of(T) * len
+	data^ = data^[n_bytes:]
 	return
 }
 
@@ -143,23 +149,44 @@ parse_ttf :: proc(path: string, idx: int) -> Glyf {
 	fmt.println("----------------- loca -----------------")
 	state.tables[.loca] = parse_loca(data, directories[.loca])
 
+	fmt.println("head size", size_of(Head))
+
 	glyf_offset := directories[.glyf].offset
+	log.info(glyf_offset)
 	switch v in state.tables[.loca].(Loca).offsets {
 	case []u32be:
 		glyf_offset += v[idx]
+		log.info(
+			"start:",
+			v[idx],
+			"end:",
+			v[idx + 1],
+			"len: ",
+			v[idx + 1] - v[idx],
+		)
 	case []u16be:
 		glyf_offset += 2 * u32be(v[idx])
+		log.info(
+			"start:",
+			v[idx] * 2,
+			"end:",
+			v[idx + 1] * 2,
+			"len: ",
+			(v[idx + 1] - v[idx]) * 2,
+		)
 	}
 
+	log.info(glyf_offset)
+
 	// fmt.println("------------")
-		glyf := parse_glyf(data[glyf_offset:])
-		// fmt.println(glyf)
-		for coord in glyf.value.(SimpleGlyf).coords {
-			fmt.printf("%d,%d\n", coord.x, coord.y)
-		}
-		// for coord in glyf.value.(SimpleGlyf).coords {
-		// 	fmt.println(coord.y)
-		// }
+	glyf := parse_glyf(data[glyf_offset:])
+	// fmt.println(glyf)
+	for coord, idx in glyf.value.(SimpleGlyf).coords {
+		log.infof("[%d], %d,%d", idx, coord.x, coord.y)
+	}
+	// for coord in glyf.value.(SimpleGlyf).coords {
+	// 	fmt.println(coord.y)
+	// }
 	// fmt.println("------------")
 	// {
 	// 	glyf := parse_glyf(data[directories[.glyf].offset:])
@@ -171,7 +198,7 @@ parse_ttf :: proc(path: string, idx: int) -> Glyf {
 	// 	}
 	// }
 	// fmt.println("------------")
-    return glyf
+	return glyf
 }
 
 parse_cmap :: proc(
@@ -200,11 +227,19 @@ parse_cmap :: proc(
 
 	fmt.println(usable_subtable)
 	cmap_data := data[cmap_dir.offset + usable_subtable.offset:]
-	cmap.prefix = value_from_data_offset(&cmap_data, 0, type_of(cmap.prefix))
+	cmap.prefix, _ = value_from_data_offset(
+		&cmap_data,
+		0,
+		type_of(cmap.prefix),
+	)
 
 	assert(cmap.prefix.format == 4)
 
-	cmap.header = value_from_data_offset(&cmap_data, 0, type_of(cmap.header))
+	cmap.header, _ = value_from_data_offset(
+		&cmap_data,
+		0,
+		type_of(cmap.header),
+	)
 
 	fmt.println(cmap.prefix)
 	fmt.println(cmap.header)
@@ -217,7 +252,7 @@ parse_cmap :: proc(
 	{
 		cmap_segments := cmap_data
 
-		end_codes := slice_from_data_offset(
+		end_codes, _ := slice_from_data_offset(
 			&cmap_segments,
 			0,
 			seg_count,
@@ -225,16 +260,17 @@ parse_cmap :: proc(
 		)
 
 		// checking reserved padding
-		assert(value_from_data_offset(&cmap_segments, 0, u16be) == 0)
+		padding, _ := value_from_data_offset(&cmap_segments, 0, u16be)
+		assert(padding == 0)
 
-		start_codes := slice_from_data_offset(
+		start_codes, _ := slice_from_data_offset(
 			&cmap_segments,
 			0,
 			seg_count,
 			u16be,
 		)
 
-		id_deltas := slice_from_data_offset(
+		id_deltas, _ := slice_from_data_offset(
 			&cmap_segments,
 			0,
 			seg_count,
@@ -279,10 +315,8 @@ parse_cmap :: proc(
 parse_head :: proc(data: []u8, dir: TableDirectory) -> (head: Head) {
 	head_data := data[dir.offset:]
 	head = value_from_data(head_data, 0, Head)
-	fmt.println(head)
-	// fmt.println(head.flags)
+	log.info(head)
 	assert(head.magic_number == 0x5F0F3CF5)
-	fmt.println(0x5F0F3CF5)
 
 	return
 }
@@ -307,11 +341,11 @@ parse_loca :: proc(data: []u8, dir: TableDirectory) -> (loca: Loca) {
 	// fmt.println(loca.offsets)
 	switch v in loca.offsets {
 	case []u32be:
-		fmt.println("len", len(v))
-		fmt.println("all", v)
+		log.info("len", len(v))
+		log.info("all", v)
 	case []u16be:
-		fmt.println("len", len(v))
-		fmt.println("all", v)
+		log.info("len", len(v))
+		log.info("all", v)
 	}
 
 	return
@@ -328,6 +362,7 @@ parse_glyf :: proc(glyf_data: []u8) -> (glyf: Glyf) {
 	if (glyf.description.n_contours < 0) {
 		glyf.value = parse_compound_glyf(glyf_data, glyf.description)
 	} else if (glyf.description.n_contours > 0) {
+		log.info("n contours", glyf.description.n_contours)
 		glyf.value = parse_simple_glyf(glyf_data, glyf.description)
 	} else {
 		glyf.value = SimpleGlyf({})
@@ -342,27 +377,36 @@ parse_simple_glyf :: proc(
 ) -> (
 	simple_glyf: SimpleGlyf,
 ) {
-	simple_glyf_data := glyf_data[size_of(GlyfDescription):]
+	total_bytes := 0
+	bytes := 0
 
-	simple_glyf.end_pts_of_contours = slice_from_data_offset(
+	simple_glyf_data := glyf_data[size_of(GlyfDescription):]
+	total_bytes += size_of(GlyfDescription)
+
+
+	simple_glyf.end_pts_of_contours, bytes = slice_from_data_offset(
 		&simple_glyf_data,
 		0,
 		int(glyf_desc.n_contours),
 		u16be,
 	)
 
-	simple_glyf.instruction_len = value_from_data_offset(
+	total_bytes += bytes
+
+	simple_glyf.instruction_len, bytes = value_from_data_offset(
 		&simple_glyf_data,
 		0,
 		u16be,
 	)
+	total_bytes += bytes
 
-	simple_glyf.instructions = slice_from_data_offset(
+	simple_glyf.instructions, bytes = slice_from_data_offset(
 		&simple_glyf_data,
 		0,
 		int(simple_glyf.instruction_len),
 		u8,
 	)
+	total_bytes += bytes
 
 	n_points := int(
 		simple_glyf.end_pts_of_contours[len(simple_glyf.end_pts_of_contours) - 1] +
@@ -378,74 +422,67 @@ parse_simple_glyf :: proc(
 		repeat := false
 		for count < n_points {
 			defer i += 1
-			defer count += 1
 			if !repeat {
-				flags[i] = value_from_data(simple_glyf_data, i, OutlineFlags)
-                fmt.println("[", i, "]", simple_glyf_data[i], flags[i])
-				if .repeat in flags[i] do repeat = true
+				flags[count] = value_from_data(simple_glyf_data, i, OutlineFlags)
+				log.info("[", count, "]", simple_glyf_data[i], flags[i])
+				if .repeat in flags[count] do repeat = true
+				count += 1
 				continue
 			}
 
 			repeat_size := int(value_from_data(simple_glyf_data, i, u8))
-			fmt.println("repeat_size", repeat_size)
+			log.info("repeat_size", repeat_size)
 			for j in 0 ..< repeat_size {
+				log.info(
+					"[",
+					i + j,
+					"]",
+					simple_glyf_data[i - 1],
+					flags[i - 1],
+				)
 				flags[i + j] = flags[i - 1]
-                repeat = false
 			}
+			count += repeat_size
+			repeat = false
 		}
 		assert(count == n_points)
 		n_flags = i
 	}
 
+	log.info("n_flags", n_flags)
 	simple_glyf_data = simple_glyf_data[n_flags:]
+	total_bytes += n_flags
 
 	simple_glyf.coords = make(#soa[]Coord, n_points)
 
 	x, y, on_curve := soa_unzip(simple_glyf.coords)
 
-    for &c, i in on_curve {
-        if .on_curve in flags[i] do c = true 
-        else do c = false
-    }
+	for &c, i in on_curve {
+		assert(.zero1 not_in flags[i])
+		assert(.zero2 not_in flags[i])
+		if .on_curve in flags[i] do c = true
+		else do c = false
+	}
 
-	simple_glyf_data = parse_coords(
+	simple_glyf_data, bytes = parse_coords(
 		&x,
 		simple_glyf_data,
 		flags,
 		.x_short_vec,
 		.same_x_or_positive_short,
 	)
+	total_bytes += bytes
 
-	simple_glyf_data = parse_coords(
+	simple_glyf_data, bytes = parse_coords(
 		&y,
 		simple_glyf_data,
 		flags,
 		.y_short_vec,
 		.same_y_or_positive_short,
 	)
+	total_bytes += bytes
 
-    /*
-	y_coords := x_coords
-	for i in 0 ..< n_points {
-		flag := flags[i]
-		if .y_short_vec in flag {
-			simple_glyf.coords[i].y = i16be(
-				value_from_data_offset(&y_coords, 0, u8),
-			)
-			if .same_y_or_positive_short not_in flag {
-				simple_glyf.coords[i].y *= -1
-			}
-		} else if .same_y_or_positive_short in flag {
-			simple_glyf.coords[i].y = simple_glyf.coords[i - 1].y
-		} else {
-			simple_glyf.coords[i].y = value_from_data_offset(
-				&y_coords,
-				0,
-				i16be,
-			)
-		}
-	}
-    */
+	log.info("total bytes:", total_bytes)
 
 	return
 
@@ -459,26 +496,42 @@ parse_coords :: proc(
 	v_short, same_v_or_pos_short: OutlineFlag,
 ) -> (
 	offset_data: []u8,
+	total_bytes: int,
 ) {
-    offset_data = data
+	offset_data = data
+
+	bytes := 0
+    offset_u8: u8 = 0
+    offset_i16be: i16be = 0
+
 	prev: i16 = 0
 	for &v, i in coords^ {
+		defer total_bytes += bytes
 		offset: i16 = 0
-		defer {
-			v = prev + offset
-			prev = v
-		}
 
 		if v_short in flags[i] {
-			offset = i16(value_from_data_offset(&offset_data, 0, u8))
+			offset_u8, bytes = value_from_data_offset(&offset_data, 0, u8)
+			offset = i16(offset_u8)
 			if same_v_or_pos_short not_in flags[i] {
 				offset *= -1
 			}
 		} else if same_v_or_pos_short in flags[i] {
+			bytes = 0
 			offset = 0
 		} else {
-			offset = i16(value_from_data_offset(&offset_data, 0, i16be))
+			offset_i16be, bytes = value_from_data_offset(
+				&offset_data,
+				0,
+				i16be,
+			)
+			offset = i16(offset_i16be)
 		}
+
+		log.info("offset[", i, "]:", offset)
+        log.info("bytes[", i, "]:", bytes)
+
+		v = prev + offset
+		prev = v
 	}
 
 	return
