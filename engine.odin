@@ -36,11 +36,17 @@ b: [3]utils.Vec2f = {
 	{0.9 * WIDTH, 0.9 * HEIGHT},
 }
 
+selected_vert := 0
+
+letter :: #config(LETTER, 'A')
 glyf_vec_sbo: u32
 glyf_on_curves_sbo: u32
 glyf_indices_sbo: u32
+glyf_uvs_sbo: u32
 glyf_triangles: []utils.Triangle
+glyf_uvs: []utils.TriangleUV
 glyf: ttf.Glyf
+glyf_npoints: int
 
 main :: proc() {
     context.logger = log.create_console_logger()
@@ -78,7 +84,8 @@ main :: proc() {
 		gl.load_up_to(3, 3, glfw.gl_set_proc_address)
 		gl.Enable(gl.DEPTH_TEST)
 		gl.Enable(gl.BLEND)
-		gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+		// gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+		gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
 		// Enable v-sync
 		glfw.SwapInterval(1)
@@ -188,7 +195,11 @@ main :: proc() {
 	}
 
 	{
-		glyf = ttf.parse_ttf("assets/fonts/JetBrainsMono-Thin.ttf", 26)
+        glyfs := ttf.parse_ttf("assets/fonts/JetBrainsMono-Thin.ttf")
+
+        glyf := glyfs['9']
+
+
 		coords := glyf.value.(ttf.SimpleGlyf).coords
 		fmt.println(coords)
 		fmt.println(glyf.description)
@@ -210,6 +221,8 @@ main :: proc() {
 				f32(glyf.description.y_max - glyf.description.y_min),
 			},
 		}
+
+        // inv_scale := if bounding_rect.size.x  
 		fmt.println(bounding_rect)
 
 		// glyf_coordinates := make([]utils.Coordf, len(coords))
@@ -221,7 +234,7 @@ main :: proc() {
 			// fmt.printf("%f,%f\n", coord_f.x, coord_f.y)
 			// fmt.println(coord_f, coords[idx])
 			v = coord_f - bounding_rect.pos
-			v /= bounding_rect.size
+			v /= bounding_rect.size.y
 			v -= {0.5, 0.5}
 			fmt.printf("%f,%f\n", v.x, v.y)
 		}
@@ -231,23 +244,27 @@ main :: proc() {
 		}
 
 		fmt.println(len(glyf_vertices))
+        glyf_npoints = len(glyf_vertices)
 		// assert(len(glyf_vertices) == 12)
 		// assert(len(glyf_vertices) == 4)
 
 		{
-			x, y, _ := soa_unzip(coords)
-			glyf_triangles = utils.triangulate_vertices(
+			x, y, on_curve := soa_unzip(coords)
+			glyf_triangles, glyf_uvs = utils.triangulate_vertices(
 				soa_zip(x = x, y = y),
 				end_contours,
+                on_curve,
 			)
 			fmt.println("glyf_triangles", glyf_triangles)
+            log.info("uvs size", size_of(glyf_uvs))
+            log.info("uvs size", size_of(glyf_uvs[0]))
 		}
 
 		using gl
 		defer BindBuffer(SHADER_STORAGE_BUFFER, 0)
 
-		SBOs: [3]u32
-		GenBuffers(3, &SBOs[0])
+		SBOs: [4]u32
+		GenBuffers(4, &SBOs[0])
 		fmt.println(SBOs)
 
 		BindBuffer(SHADER_STORAGE_BUFFER, SBOs[0])
@@ -280,6 +297,16 @@ main :: proc() {
 		BindBufferBase(SHADER_STORAGE_BUFFER, 2, SBOs[2])
 		glyf_indices_sbo = SBOs[2]
 
+		BindBuffer(SHADER_STORAGE_BUFFER, SBOs[3])
+		BufferData(
+			SHADER_STORAGE_BUFFER,
+			size_of(utils.TriangleUV) * len(glyf_uvs),
+			raw_data(glyf_uvs),
+			STATIC_DRAW,
+		)
+		BindBufferBase(SHADER_STORAGE_BUFFER, 1, SBOs[3])
+		glyf_uvs_sbo = SBOs[3]
+
 		{
 			// Read back vertices SSBO
 			vertices_data := make([]utils.Vec2f, len(glyf_vertices))
@@ -290,7 +317,7 @@ main :: proc() {
 				size_of(utils.Vec2f) * len(glyf_vertices),
 				raw_data(vertices_data),
 			)
-			fmt.println("Vertices SSBO:", vertices_data)
+			log.debug("Vertices SSBO:", vertices_data)
 
 			// Read back on_curves SSBO
 			on_curves_data := make([]b32, len(glyf_on_curves))
@@ -301,7 +328,7 @@ main :: proc() {
 				size_of(b32) * len(glyf_on_curves),
 				raw_data(on_curves_data),
 			)
-			fmt.println("OnCurves SSBO:", on_curves_data)
+			log.debug("OnCurves SSBO:", on_curves_data)
 
 			// Read back indices SSBO
 			indices_data := make([]utils.Triangle, len(glyf_triangles))
@@ -312,8 +339,17 @@ main :: proc() {
 				size_of(utils.Triangle) * len(glyf_triangles),
 				raw_data(indices_data),
 			)
-			fmt.println("Indices SSBO:", indices_data)
+			log.debug("Indices SSBO(", len(indices_data), ":", indices_data)
 
+			uvs_data := make([]utils.TriangleUV, len(glyf_uvs))
+			BindBuffer(SHADER_STORAGE_BUFFER, SBOs[3])
+			gl.GetBufferSubData(
+				SHADER_STORAGE_BUFFER,
+				0,
+				size_of(utils.TriangleUV) * len(glyf_uvs),
+				raw_data(uvs_data),
+			)
+			log.debug("Uvs SSBO(", len(uvs_data), ":", uvs_data)
 		}
 	}
 
@@ -573,28 +609,40 @@ update :: proc() {
 		}
 	}
 
-	if UI.do_button(
-		"Do something",
-		Rect({pos = {20, 20}, size = {100, 50}}),
-		1,
-	) {
-		opposite = !opposite
-	}
+	// if UI.do_button(
+	// 	"Do something",
+	// 	Rect({pos = {20, 20}, size = {100, 50}}),
+	// 	1,
+	// ) {
+	// 	opposite = !opposite
+	// }
 
-	{
-		if targeting != nil {
-			targeting^ = state.mouse.pos
-		}
-	}
+	// {
+	// 	if targeting != nil {
+	// 		targeting^ = state.mouse.pos
+	// 	}
+	// }
 
-	b_size: utils.Vec2f = {20, 20}
-	for &b_i, idx in b {
-		r := utils.Rect({b_i - (b_size / 2), b_size})
-		if UI.do_button("", r, i32(idx) + 2) {
-			if targeting == nil do targeting = &b_i
-			else do targeting = nil
-		}
-	}
+	// b_size: utils.Vec2f = {20, 20}
+	// for &b_i, idx in b {
+	// 	r := utils.Rect({b_i - (b_size / 2), b_size})
+	// 	if UI.do_button("", r, i32(idx) + 2) {
+	// 		if targeting == nil do targeting = &b_i
+	// 		else do targeting = nil
+	// 	}
+	// }
+
+    if UI.do_button("Prev", Rect({{20, 20}, {100, 50}}), 1) {
+        selected_vert -= 1 
+        selected_vert %%= glyf_npoints 
+        log.debug("prev selected vert", selected_vert)
+    }
+    
+    if UI.do_button("Next", Rect({{140, 20}, {100, 50}}), 2) {
+        selected_vert += 1 
+        selected_vert %%= glyf_npoints 
+        log.debug("next selected vert", selected_vert)
+    }
 
 	update_time()
 }
@@ -663,7 +711,7 @@ render :: proc() {
 
 	// gl.DrawElements(gl.TRIANGLES, len(indices) * 3, gl.UNSIGNED_INT, nil)
 
-	// UI.render(state.window.size)
+	UI.render(state.window.size)
 	// render_bezier()
 	render_glyf()
 }
@@ -697,9 +745,8 @@ render_bezier :: proc() {
 render_glyf :: proc() {
 	font := state.graphics.shaders["font"]
 	gl.UseProgram(font)
-	// gl.DrawElements(gl.TRIANGLES, i32(size_of(utils.Triangle) * (len(glyf_triangles)-1)), gl.UNSIGNED_INT, nil)
-	// gl.DrawArrays(gl.POINTS, 0, 12)
-	// gl.DrawArrays(gl.POINTS, 0, 17 * 3)
+    utils.set_val(font, "selected_vert", i32(selected_vert))
 	gl.DrawArrays(gl.TRIANGLES, 0, i32(len(glyf_triangles)) * 3)
+	// gl.DrawArrays(gl.POINTS, 0, i32(len(glyf_triangles)) * 3)
 	// gl.DrawBuffer(glyf_sbo)
 }

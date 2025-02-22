@@ -92,7 +92,7 @@ CmapFormat4 :: struct {
 	segments:  #soa[]struct {
 		end_code, start_code, id_delta, id_range_offset: u16be,
 	},
-	glyph_ids: []u16be,
+	glyph_index_array: []u16be,
 }
 
 /*
@@ -213,7 +213,7 @@ OutlineFlag :: enum u8 {
 	repeat = 3,
 	same_x_or_positive_short = 4,
 	same_y_or_positive_short = 5,
-	zero1 = 6,
+	midpoint = 6,
 	zero2 = 7,
 }
 

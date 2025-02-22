@@ -9,14 +9,18 @@ import "core:strings"
 // https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6glyf.html
 
 @(require_results)
-value_from_data :: #force_inline proc(data: []u8, idx: int, $T: typeid) -> T {
+value_from_data :: #force_inline proc(
+	data: []u8,
+	#any_int idx: int,
+	$T: typeid,
+) -> T {
 	return (^T)(&data[idx])^
 }
 
 @(require_results)
 value_from_data_offset :: #force_inline proc(
 	data: ^[]u8,
-	idx: int,
+    #any_int idx: int,
 	$T: typeid,
 ) -> (
 	res: T,
@@ -105,7 +109,8 @@ state: struct {
 	tables:          #sparse[TableTag]Table,
 }
 
-parse_ttf :: proc(path: string, idx: int) -> Glyf {
+parse_ttf :: proc(path: string) -> (result: ASCII_Glyfs) {
+// parse_ttf :: proc(path: string, char: u8) -> Glyf {
 	data, ok := os.read_entire_file(path)
 	if !ok do panic("couldnt read file")
 	defer delete(data)
@@ -141,7 +146,6 @@ parse_ttf :: proc(path: string, idx: int) -> Glyf {
 
 	fmt.println("----------------- cmap -----------------")
 	state.tables[.cmap] = parse_cmap(data, directories[.cmap])
-	fmt.println("here")
 	fmt.println("----------------- head -----------------")
 	state.tables[.head] = parse_head(data, directories[.head])
 	fmt.println("----------------- maxp -----------------")
@@ -149,8 +153,40 @@ parse_ttf :: proc(path: string, idx: int) -> Glyf {
 	fmt.println("----------------- loca -----------------")
 	state.tables[.loca] = parse_loca(data, directories[.loca])
 
+	global_glyf_offset := u32(directories[.glyf].offset)
+	local_glyf_locations: [128]u32
+
+    cmap4 := state.tables[.cmap].(CmapFormat4)
+    loca := state.tables[.loca].(Loca)
+    // log.info(cmap4.glyph_index_array)
+
+    for &glyf, idx in result { // assume that ascii chars are simple glyfs
+        mapped_idx := cmap4.glyph_index_array[idx]
+        loca_offset: u32
+        switch v in loca.offsets {
+        case []u32be: 
+            loca_offset = u32(v[mapped_idx])
+        case []u16be: 
+            loca_offset = u32(v[mapped_idx])
+        }
+        glyf_offset := global_glyf_offset + loca_offset
+        log.infof("parsing glyf %d at %d", u8(idx), mapped_idx)
+        {
+            context.logger.lowest_level = .Warning
+            glyf = parse_glyf(data[glyf_offset:]) 
+            context.logger.lowest_level = .Debug
+        }
+    }
+
+    return 
+
+    /*
 	fmt.println("head size", size_of(Head))
 
+	log.info(state.tables[.cmap].(CmapFormat4).glyph_index_array)
+	log.infof("%c, %d", char, char)
+	idx := state.tables[.cmap].(CmapFormat4).glyph_index_array[char]
+	log.info("index:", idx)
 	glyf_offset := directories[.glyf].offset
 	log.info(glyf_offset)
 	switch v in state.tables[.loca].(Loca).offsets {
@@ -199,6 +235,25 @@ parse_ttf :: proc(path: string, idx: int) -> Glyf {
 	// }
 	// fmt.println("------------")
 	return glyf
+    */
+}
+
+get_char_index :: proc(char: u8) -> u32 {
+	cmap4 := state.tables[.cmap].(CmapFormat4)
+	log.infof("parsing glyf %c", u8(char))
+
+	mapped_idx := u32(cmap4.glyph_index_array[char])
+
+	loca_offset: u32
+	loca := state.tables[.loca].(Loca)
+	switch v in loca.offsets {
+	case []u32be:
+		loca_offset = u32(v[mapped_idx])
+	case []u16be:
+		loca_offset = u32(v[mapped_idx])
+	}
+
+	return loca_offset
 }
 
 parse_cmap :: proc(
@@ -207,7 +262,7 @@ parse_cmap :: proc(
 ) -> (
 	cmap: CmapFormat4,
 ) {
-	index := value_from_data(data, int(cmap_dir.offset), CmapIndex)
+	index := value_from_data(data, cmap_dir.offset, CmapIndex)
 	// index: CmapIndex = (^CmapIndex)(&data[cmap_dir.offset])^
 	fmt.println(index)
 
@@ -289,8 +344,52 @@ parse_cmap :: proc(
 		when ODIN_TEST {
 			assert(cmap.segments[len(cmap.segments) - 1].end_code == 0xFFFF)
 		}
+
+		/*
+        if the segment.id_range_offset == 0 then: 
+            the index of char c to glyph table is c - segment.id_delta
+
+        if the id_range_offset is not 0 then: 
+
+        [n]-----------n bytes-----------[_]----(c - start_code)----[idx]
+         ^           n/2 u16be           ^           u16be           ^
+   id_range_offset                   start_code                  idx glyph 
+                                        idx                        table
+
+         */
+		glyph_index_dyn := make([dynamic]u16be)
+		{
+			for segment in cmap.segments {
+				defer cmap_segments = cmap_segments[2:]
+
+				// in bytes
+				offset_to_start_code_idx := segment.id_range_offset
+
+				for c in segment.start_code ..= segment.end_code {
+					if segment.id_range_offset == 0 {
+						assign_at(&glyph_index_dyn, c, u16be(
+							u32(c + segment.id_delta) % 0xFFFF,
+						))
+						continue
+					}
+
+					// in bytes
+					offset_to_idx :=
+						offset_to_start_code_idx + 2 * (c - segment.start_code)
+					assign_at(&glyph_index_dyn, c, value_from_data(
+						cmap_segments,
+						offset_to_idx,
+						u16be,
+					))
+				}
+			}
+		}
+		shrink(&glyph_index_dyn)
+		cmap.glyph_index_array = glyph_index_dyn[:]
 	}
 
+
+	/*
 	{
 		segments_len := len(cmap.segments) * size_of(cmap.segments[0])
 		segments_len += 1 * size_of(u16be)
@@ -301,13 +400,26 @@ parse_cmap :: proc(
 		glyph_ids_len -= size_of(cmap.header)
 		glyph_ids_len -= size_of(cmap.prefix)
 
-		cmap.glyph_ids = slice_from_data(
+		cmap.glyph_index_array = slice_from_data(
 			cmap_data,
 			segments_len,
 			glyph_ids_len / size_of(u16be),
 			u16be,
 		)
 	}
+    */
+
+	// {
+	// 	for segment in cmap.segments {
+	// 		if segment.id_range_offset == 0 {
+	// 			for i in segment.start_code ..< segment.end_code {
+	// 				cmap.glyph_index_array[i] = u16be(
+	// 					u32((i + segment.id_delta)) % 65536,
+	// 				)
+	// 			}
+	// 		}
+	// 	}
+	// }
 
 	return
 }
@@ -362,7 +474,6 @@ parse_glyf :: proc(glyf_data: []u8) -> (glyf: Glyf) {
 	if (glyf.description.n_contours < 0) {
 		glyf.value = parse_compound_glyf(glyf_data, glyf.description)
 	} else if (glyf.description.n_contours > 0) {
-		log.info("n contours", glyf.description.n_contours)
 		glyf.value = parse_simple_glyf(glyf_data, glyf.description)
 	} else {
 		glyf.value = SimpleGlyf({})
@@ -412,53 +523,86 @@ parse_simple_glyf :: proc(
 		simple_glyf.end_pts_of_contours[len(simple_glyf.end_pts_of_contours) - 1] +
 		1,
 	)
-	fmt.println("n_points", n_points)
-	flags := make([]OutlineFlags, n_points, context.temp_allocator)
+	log.info("n_points", n_points)
+	flags := make([dynamic]OutlineFlags, context.temp_allocator)
 
+	// Read flags, append midpoints if need be, and adjust the 
+	// end_pts_of_contours
+	log.info(simple_glyf.end_pts_of_contours)
 	n_flags := 0
 	{
-		i := 0
-		count := 0
-		repeat := false
-		for count < n_points {
-			defer i += 1
-			if !repeat {
-				flags[count] = value_from_data(simple_glyf_data, i, OutlineFlags)
-				log.info("[", count, "]", simple_glyf_data[i], flags[i])
-				if .repeat in flags[count] do repeat = true
-				count += 1
+		current_contour := 0
+		contour_offset: u16be = 0
+
+		flags_read := 0
+
+		flag_to_repeat: OutlineFlags
+		read_repeat := false
+		repeat: u8 = 0
+
+		prev_off_curve := false
+
+		for flags_read < n_points {
+			log.info(flags_read, len(flags))
+			if len(flags) >
+			   int(simple_glyf.end_pts_of_contours[current_contour]) {
+				current_contour += 1
+				simple_glyf.end_pts_of_contours[current_contour] +=
+					contour_offset
+				log.info(simple_glyf.end_pts_of_contours)
+			}
+
+			if read_repeat {
+				log.info("reading repeat")
+				repeat, _ = value_from_data_offset(&simple_glyf_data, 0, u8)
+				read_repeat = false
+				// flags_read += 1
 				continue
 			}
 
-			repeat_size := int(value_from_data(simple_glyf_data, i, u8))
-			log.info("repeat_size", repeat_size)
-			for j in 0 ..< repeat_size {
-				log.info(
-					"[",
-					i + j,
-					"]",
-					simple_glyf_data[i - 1],
-					flags[i - 1],
+			flag: OutlineFlags
+			defer append(&flags, flag)
+			if repeat > 0 {
+				flag = flag_to_repeat
+				repeat -= 1
+				flags_read += 1
+			} else {
+				flag, _ = value_from_data_offset(
+					&simple_glyf_data,
+					0,
+					OutlineFlags,
 				)
-				flags[i + j] = flags[i - 1]
+                flag -= {.midpoint, .zero2}
+				flags_read += 1
+				if .repeat in flag {
+					flag_to_repeat = flag
+					read_repeat = true
+				}
 			}
-			count += repeat_size
-			repeat = false
+
+			if prev_off_curve && .on_curve not_in flag {
+				midpoint_flag := flag + {.midpoint, .on_curve}
+				append(&flags, midpoint_flag)
+				simple_glyf.end_pts_of_contours[current_contour] += 1
+				contour_offset += 1
+			}
+
+			prev_off_curve = .on_curve not_in flag
 		}
-		assert(count == n_points)
-		n_flags = i
+		n_flags = flags_read
 	}
 
+
+	log.info("contours", simple_glyf.end_pts_of_contours)
 	log.info("n_flags", n_flags)
-	simple_glyf_data = simple_glyf_data[n_flags:]
+	// simple_glyf_data = simple_glyf_data[n_flags:]
 	total_bytes += n_flags
 
-	simple_glyf.coords = make(#soa[]Coord, n_points)
+	simple_glyf.coords = make(#soa[]Coord, len(flags))
 
 	x, y, on_curve := soa_unzip(simple_glyf.coords)
 
 	for &c, i in on_curve {
-		assert(.zero1 not_in flags[i])
 		assert(.zero2 not_in flags[i])
 		if .on_curve in flags[i] do c = true
 		else do c = false
@@ -467,7 +611,7 @@ parse_simple_glyf :: proc(
 	simple_glyf_data, bytes = parse_coords(
 		&x,
 		simple_glyf_data,
-		flags,
+		flags[:],
 		.x_short_vec,
 		.same_x_or_positive_short,
 	)
@@ -476,13 +620,15 @@ parse_simple_glyf :: proc(
 	simple_glyf_data, bytes = parse_coords(
 		&y,
 		simple_glyf_data,
-		flags,
+		flags[:],
 		.y_short_vec,
 		.same_y_or_positive_short,
 	)
 	total_bytes += bytes
 
+
 	log.info("total bytes:", total_bytes)
+
 
 	return
 
@@ -501,10 +647,100 @@ parse_coords :: proc(
 	offset_data = data
 
 	bytes := 0
-    offset_u8: u8 = 0
-    offset_i16be: i16be = 0
+	offset_u8: u8 = 0
+	offset_i16be: i16be = 0
 
 	prev: i16 = 0
+
+	prev_was_midpoint := false
+	midpoint_offset: i16 = 0
+
+	for &v, i in coords {
+		if prev_was_midpoint {
+			assert(.midpoint not_in flags[i])
+			prev_was_midpoint = false
+			v = prev + midpoint_offset
+			prev = v
+			midpoint_offset = 0
+			continue
+		}
+
+		bytes = 0
+		defer total_bytes += bytes
+
+		offset: i16 = 0
+
+		if v_short in flags[i] {
+			offset_u8, bytes = value_from_data_offset(&offset_data, 0, u8)
+			offset = i16(offset_u8)
+			if same_v_or_pos_short not_in flags[i] {
+				offset *= -1
+			}
+		} else if same_v_or_pos_short in flags[i] {
+			bytes = 0
+			offset = 0
+		} else {
+			offset_i16be, bytes = value_from_data_offset(
+				&offset_data,
+				0,
+				i16be,
+			)
+			offset = i16(offset_i16be)
+		}
+
+		log.info("offset[", i, "]:", offset)
+		log.info("bytes[", i, "]:", bytes)
+
+		if .midpoint in flags[i] {
+			midpoint_offset = offset / 2
+			offset /= 2
+			prev_was_midpoint = true
+		} else {
+			prev_was_midpoint = false
+		}
+
+		v = prev + offset
+		prev = v
+	}
+
+	/*
+	for i := 0; i < int(n_coords); i += 1 {
+		defer total_bytes += bytes
+
+		offset: i16 = 0
+
+		if v_short in flags[i] {
+			offset_u8, bytes = value_from_data_offset(&offset_data, 0, u8)
+			offset = i16(offset_u8)
+			if same_v_or_pos_short not_in flags[i] {
+				offset *= -1
+			}
+		} else if same_v_or_pos_short in flags[i] {
+			bytes = 0
+			offset = 0
+		} else {
+			offset_i16be, bytes = value_from_data_offset(
+				&offset_data,
+				0,
+				i16be,
+			)
+			offset = i16(offset_i16be)
+		}
+
+		if prev_off_curve && .on_curve not_in flags[i] {
+			midpoint := prev + offset / 2
+			append(coords, midpoint)
+			if on_curve != nil do append(on_curve, true)
+		}
+
+		append(coords, prev + offset)
+		if on_curve != nil do append(on_curve, .on_curve in flags[i])
+		prev_off_curve = .on_curve not_in flags[i]
+		prev += offset
+	}
+    */
+
+	/*
 	for &v, i in coords^ {
 		defer total_bytes += bytes
 		offset: i16 = 0
@@ -533,6 +769,7 @@ parse_coords :: proc(
 		v = prev + offset
 		prev = v
 	}
+    */
 
 	return
 }
@@ -546,3 +783,42 @@ parse_compound_glyf :: proc(
 
 	return
 }
+/*
+	n_flags := 0
+	{
+		i := 0
+		count := 0
+		repeat := false
+		prev_off_curve := false
+		for count < n_points {
+			flag: OutlineFlags
+			defer i += 1
+			if !repeat {
+				flag := value_from_data(simple_glyf_data, i, OutlineFlags)
+				// log.info("[", count, "]", simple_glyf_data[i], flags[i])
+				if .repeat in flag do repeat = true
+				count += 1
+
+
+				continue
+			}
+
+			repeat_size := int(value_from_data(simple_glyf_data, i, u8))
+			log.info("repeat_size", repeat_size)
+			for j in 0 ..< repeat_size {
+				log.info(
+					"[",
+					i + j,
+					"]",
+					simple_glyf_data[i - 1],
+					flags[i - 1],
+				)
+				flags[i + j] = flags[i - 1]
+			}
+			count += repeat_size
+			repeat = false
+		}
+		assert(count == n_points)
+		n_flags = i
+	}
+    */

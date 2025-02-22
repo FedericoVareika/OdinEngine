@@ -16,15 +16,19 @@ Vec4u :: [4]u32
 
 Vec3b :: [3]bool
 
-Triangle :: distinct [3]i32
+Triangle :: distinct [3]u32
+TriangleUV :: [3]struct #packed {
+    uv: Vec2f,
+    z: b64,
+}
 
 Rect :: struct {
 	pos, size: Vec2f,
 }
 
 Coordf :: struct {
-    p: Vec2f,
-    on_curve: b32,
+	p:        Vec2f,
+	on_curve: b32,
 }
 
 Texture :: enum {
