@@ -2,19 +2,7 @@ package ttfonting
 
 import "core:testing"
 import "core:log"
-
-// @(require_results)
-// get_val :: #force_inline proc "contextless" (
-// 	data: []u8,
-// 	index: int,
-// 	$T: typeid,
-// ) -> T {
-// 	return (^T)(&data[index])^
-// }
-
-// get_string :: #force_inline proc(data: []byte, len: int) -> string {
-// 	return strings.string_from_ptr(raw_data(data), 4)
-// }
+import "core:fmt"
 
 @(test)
 main_test :: proc(_: ^testing.T) {
@@ -24,7 +12,20 @@ main_test :: proc(_: ^testing.T) {
 
     glyfs := parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf")
     // glyfs := parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf", 'U')
-    log.info(glyfs)
+    // log.info(len(glyfs['9'].value.(SimpleGlyf).coords))
+    // log.info(glyfs['9'].value.(SimpleGlyf).coords)
+    log.info(glyfs['D'].value.(SimpleGlyf).end_pts_of_contours)
+
+    for coord in glyfs['D'].value.(SimpleGlyf).coords {
+        fmt.printf("%d,%d\n", coord.x, coord.y)
+    }
+
+    // for glyf in glyfs {
+
+    //     delete(glyf.value.(SimpleGlyf).end_pts_of_contours)
+    //     delete(glyf.value.(SimpleGlyf).instructions)
+    //     delete(glyf.value.(SimpleGlyf).coords)
+    // }
 }
 
 

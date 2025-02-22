@@ -29,7 +29,7 @@ Vertex :: struct {
 MAX_VERTICES :: 200
 MAX_EDGES :: (MAX_VERTICES - 1) * 3
 NIL: EdgePtr : -1
-EPSILON :: 0
+EPSILON :: #config(EPSILON, 0)
 
 /*
 @(private = "file")
@@ -217,14 +217,12 @@ delete_edge :: proc(e: EdgePtr) {
 }
 
 swap :: proc(e: EdgePtr, loc := #caller_location) {
-	log.debug(loc)
 	a := o_prev(e)
 	b := o_prev(sym(e))
 	splice(e, a)
 	splice(sym(e), b)
 	splice(e, l_next(a))
 	splice(sym(e), l_next(b))
-	log.debug("here")
 
 	// orig(e)^ = orig(l_next(a))^
 	// Note(fede): should not have to change the dest value since it is the same (i think)
@@ -235,7 +233,6 @@ swap :: proc(e: EdgePtr, loc := #caller_location) {
 	state.origin_to_edge_mapping[state.mappings[dest(e)^]] = sym(e)
 	state.origin_to_edge_mapping[state.mappings[orig(a)^]] = a
 	state.origin_to_edge_mapping[state.mappings[orig(b)^]] = b
-	log.debug("here")
 }
 
 import la "core:math/linalg"
@@ -255,10 +252,44 @@ incircle_vec2 :: proc(pts: [4]Vertex) -> bool {
 	m[2] = x2_y2
 	m[3] = {1, 1, 1, 1}
 	d := la.determinant(m)
-	// log.info("det:", d)
+
 	return d > EPSILON
 	// return d > 0
 	// return d > EPSILON
+}
+
+
+/*
+This algorigthm is stolen from Jonathan Richard Shewchuk, more info:
+    https://www.cs.cmu.edu/~quake/robust.html
+ */
+@(require_results)
+incircle_fast :: proc(pts: [4]Vertex) -> bool {
+	a: [2]i128 = {i128(pts[0].x), i128(pts[0].y)}
+	b: [2]i128 = {i128(pts[1].x), i128(pts[1].y)}
+	c: [2]i128 = {i128(pts[2].x), i128(pts[2].y)}
+	d: [2]i128 = {i128(pts[3].x), i128(pts[3].y)}
+
+
+	adx, ady, bdx, bdy, cdx, cdy: i128
+	abdet, bcdet, cadet: i128
+	alift, blift, clift: i128
+
+	adx = a[0] - d[0]
+	ady = a[1] - d[1]
+	bdx = b[0] - d[0]
+	bdy = b[1] - d[1]
+	cdx = c[0] - d[0]
+	cdy = c[1] - d[1]
+
+	abdet = adx * bdy - bdx * ady
+	bcdet = bdx * cdy - cdx * bdy
+	cadet = cdx * ady - adx * cdy
+	alift = adx * adx + ady * ady
+	blift = bdx * bdx + bdy * bdy
+	clift = cdx * cdx + cdy * cdy
+
+	return alift * bcdet + blift * cadet + clift * abdet > EPSILON
 }
 
 @(require_results)
@@ -268,7 +299,7 @@ incircle_ptr :: proc(pts: [4]VertPtr) -> bool {
 		p = get_vert(pts[i])
 		// state.vertices[state.mappings[pts[i]]]
 	}
-	return incircle_vec2(pts_vec2)
+	return incircle_fast(pts_vec2)
 }
 
 @(require_results)
@@ -409,14 +440,9 @@ quick_sort :: proc(#any_int l, u: int) {
 delaunay :: proc(set: []u16, offset: i32 = 0) -> (le, re: EdgePtr) {
 	switch len(set) {
 	case 2:
-		log.debug("hihi")
-		// a := make_edge(set[0], set[1])
 		a := make_edge(offset, offset + 1)
 		return a, sym(a)
 	case 3:
-		log.debug("hihi3")
-		// a := make_edge(set[0], set[1])
-		// b := make_edge(set[1], set[2])
 		a := make_edge(offset, offset + 1)
 		b := make_edge(offset + 1, offset + 2)
 		splice(sym(a), b)
@@ -436,32 +462,14 @@ delaunay :: proc(set: []u16, offset: i32 = 0) -> (le, re: EdgePtr) {
 			return sym(c), c
 		} else do return a, sym(b)
 	case:
-		log.debug("hihi>=4")
 		L := set[0:len(set) / 2]
-		log.debug("L", L)
 		R := set[len(set) / 2:]
-		log.debug("R", R)
+		when ODIN_DEBUG {
+			log.debug("L", L)
+			log.debug("R", R)
+		}
 		ldo, ldi := delaunay(L, offset = offset)
 		rdi, rdo := delaunay(R, offset = offset + i32(len(set) / 2))
-		log.debug(
-			"ldo",
-			state.mappings[orig(ldo)^],
-			state.mappings[dest(ldo)^],
-			"ldi",
-			state.mappings[orig(ldi)^],
-			state.mappings[dest(ldi)^],
-		)
-		log.debug(
-			"rdi",
-			state.mappings[orig(rdi)^],
-			state.mappings[dest(rdi)^],
-			"rdo",
-			state.mappings[orig(rdo)^],
-			state.mappings[dest(rdo)^],
-		)
-
-		log.debug(left_of(orig(rdi)^, ldi))
-		log.debug(right_of(orig(ldi)^, rdi))
 
 		// Compute the lower common tangent of L and R
 		for {
@@ -480,7 +488,6 @@ delaunay :: proc(set: []u16, offset: i32 = 0) -> (le, re: EdgePtr) {
 			// rising bubble and delete L edges of base_l.dest that fail the 
 			// circle test
 			l_cand := o_next(sym(base_l))
-			log.debug("lcand valid", valid(l_cand, base_l))
 			if valid(l_cand, base_l) { 	// valid
 				for incircle(
 					    dest(base_l)^,
@@ -488,9 +495,11 @@ delaunay :: proc(set: []u16, offset: i32 = 0) -> (le, re: EdgePtr) {
 					    dest(l_cand)^,
 					    dest(o_next(l_cand))^,
 				    ) {
-					log.debug(
-						"deleting inner lcands that dont comply with incircle",
-					)
+					when ODIN_DEBUG {
+						log.debug(
+							"deleting inner lcands that dont comply with incircle",
+						)
+					}
 					t := o_next(l_cand)
 					delete_edge(l_cand)
 					l_cand = t
@@ -499,7 +508,6 @@ delaunay :: proc(set: []u16, offset: i32 = 0) -> (le, re: EdgePtr) {
 
 			// Symmetrically, locate the first R point to be hit, delete the rest
 			r_cand := o_prev(base_l)
-			log.debug("rcand valid", valid(r_cand, base_l))
 			if valid(r_cand, base_l) { 	// valid
 				for incircle(
 					    dest(base_l)^,
@@ -507,9 +515,11 @@ delaunay :: proc(set: []u16, offset: i32 = 0) -> (le, re: EdgePtr) {
 					    dest(r_cand)^,
 					    dest(o_prev(r_cand))^,
 				    ) {
-					log.debug(
-						"deleting inner rcands that dont comply with incircle",
-					)
+					when ODIN_DEBUG {
+						log.debug(
+							"deleting inner rcands that dont comply with incircle",
+						)
+					}
 					t := o_prev(r_cand)
 					delete_edge(r_cand)
 					r_cand = t
@@ -530,7 +540,11 @@ delaunay :: proc(set: []u16, offset: i32 = 0) -> (le, re: EdgePtr) {
 							orig(r_cand)^,
 							dest(r_cand)^,
 						))
-			log.debug("right is delaunay:", right_is_delaunay)
+
+			when ODIN_DEBUG {
+				log.debug("right is delaunay:", right_is_delaunay)
+			}
+
 			if right_is_delaunay do base_l = connect(r_cand, sym(base_l))
 			else do base_l = connect(sym(base_l), sym(l_cand)) // l_cand is delaunay
 		}
@@ -572,6 +586,7 @@ get_next_vert :: proc {
 	get_next_vert_wi_contour,
 }
 
+cut :: #config(CUT, true)
 traverse_triangles :: proc(
 	dest_dyn: ^[dynamic]Triangle,
 	uvs_dyn: ^[dynamic]TriangleUV,
@@ -579,7 +594,7 @@ traverse_triangles :: proc(
 	on_curve: []bool,
 ) {
 	visited_edges := make(map[EdgePtr]bool, context.temp_allocator)
-	main_loop: for i := 0; i < int(state.next_edge); i += 4 {
+	main_loop: for i := 0; i < int(state.next_edge); i += 2 {
 		e := state.edges[i]
 		if i == int(state.available_edge) {
 			state.available_edge = o_next(state.available_edge)
@@ -651,25 +666,18 @@ traverse_triangles :: proc(
 					get_next_vert(start_c, end_c, c) == a
 				is_outside := same_contour && vertices_growing
 				filled := on_curve[a] && on_curve[b] && on_curve[c]
-				// filled ||= !on_curve[a] && (cw_from_a || ccw_from_a || cw_from_c || ccw_from_b)
-				// filled ||= !on_curve[b] && (cw_from_b || ccw_from_b || cw_from_a || ccw_from_c)
-				// filled ||= !on_curve[c] && (cw_from_c || ccw_from_c || cw_from_b || ccw_from_a)
 
-                filled ||= !on_curve[a] && !(ccw_from_c || cw_from_b)
-                filled ||= !on_curve[b] && !(ccw_from_a || cw_from_c)
-                filled ||= !on_curve[c] && !(ccw_from_b || cw_from_a)
-
-
-				// log.debug("Tri", new_tri, ":",
-				//     state.vertices[new_tri[0]], 
-				//     state.vertices[new_tri[1]], 
-				//     state.vertices[new_tri[2]], 
-				//     )
+				filled ||= !on_curve[a] && !(ccw_from_c || cw_from_b)
+				filled ||= !on_curve[b] && !(ccw_from_a || cw_from_c)
+				filled ||= !on_curve[c] && !(ccw_from_b || cw_from_a)
 
 				should_cut =
 					is_outside && filled ||
 					(consecutive_verts && !(outer_edge || inner_edge))
-				if should_cut do continue
+
+				when cut == true {
+					if should_cut do continue
+				}
 
 
 				// Uv calculations
@@ -687,35 +695,11 @@ traverse_triangles :: proc(
 					new_uv[before].uv = {0, 0}
 					new_uv[off_curve_idx].uv = {0.5, 0}
 					new_uv[after].uv = {1, 1}
-					// new_uv[before] = {0, 0, 1}
-					// new_uv[off_curve_idx] = {0.5, 0, 1}
-					// new_uv[after] = {1, 1, 1}
 					if inner_edge {
 						new_uv[0].z = false
 						new_uv[1].z = false
 						new_uv[2].z = false
 					}
-					log.debug(
-						"before",
-						before,
-						"off_curve_idx",
-						off_curve_idx,
-						"after",
-						after,
-					)
-				}
-				if new_tri == {2, 1, 0} {
-					log.debug("contours", end_contours)
-					log.debug("Tri", new_tri)
-					log.debug("start", s, "end", e)
-					log.debug("same contour", same_contour)
-					log.debug("outer edge", outer_edge)
-					log.debug("inner edge", inner_edge)
-					log.debug("vertices growing", vertices_growing)
-					log.debug("consecutive verts", consecutive_verts)
-					log.debug("is outside", is_outside)
-					log.debug("filled", filled)
-					log.debug("new_uv", new_uv)
 				}
 			}
 
@@ -731,31 +715,31 @@ traverse_triangles :: proc(
 intersects :: proc(a1, b1, a2, b2: Vertex) -> bool {
 	// (a1b1 x b1b2) . (a1b1 x b1a2) < 0
 	// (a2b2 x b2b1) . (a2b2 x b2a1) < 0
-	a1_: [3]i32 = {i32(a1.x), i32(a1.y), 0}
-	b1_: [3]i32 = {i32(b1.x), i32(b1.y), 0}
-	a2_: [3]i32 = {i32(a2.x), i32(a2.y), 0}
-	b2_: [3]i32 = {i32(b2.x), i32(b2.y), 0}
-	// b1_ := transmute([2]i16)b1
-	// a2_ := transmute([2]i16)a2
-	// b2_ := transmute([2]i16)b2
+	a1_: [2]i128 = {i128(a1.x), i128(a1.y)}
+	b1_: [2]i128 = {i128(b1.x), i128(b1.y)}
+	a2_: [2]i128 = {i128(a2.x), i128(a2.y)}
+	b2_: [2]i128 = {i128(b2.x), i128(b2.y)}
 
 	a1b1 := b1_ - a1_
 	b1b2 := b2_ - b1_
 	b1a2 := a2_ - b1_
+
 	// log.debug("cross(a1b1, b1b2)", la.cross(a1b1, b1b2))
 	// log.debug("cross(a1b1, b1a2)", la.cross(a1b1, b1a2))
-	// log.debug("dot(crosses)", la.dot(la.cross(a1b1, b1b2), la.cross(a1b1, b1a2)))
-	result := la.dot(la.cross(a1b1, b1b2), la.cross(a1b1, b1a2)) < 0
+	// log.debug("dot(crosses)", la.cross(a1b1, b1b2) * la.cross(a1b1, b1a2))
+	result := la.cross(a1b1, b1b2) * la.cross(a1b1, b1a2) < 0
 
 	a2b2 := b2_ - a2_
 	b2b1 := b1_ - b2_
 	b2a1 := a1_ - b2_
 	// log.debug("cross(a1b1, b1b2)", la.cross(a2b2, b2b1))
 	// log.debug("cross(a1b1, b1a2)", la.cross(a2b2, b2a1))
-	// log.debug("dot(crosses)", la.dot(la.cross(a2b2, b2b1), la.cross(a2b2, b2a1)))
-	result &&= la.dot(la.cross(a2b2, b2b1), la.cross(a2b2, b2a1)) < 0
+	// log.debug("dot(crosses)", la.cross(a2b2, b2b1) * la.cross(a2b2, b2a1))
+	result &&= la.cross(a2b2, b2b1) * la.cross(a2b2, b2a1) < 0
 	// result &&= linalg.vector_dot(linalg.vector_cross2(a2b2, b2b1), linalg.vector_cross2(a2b2, b2a1)) < 0
 
+	// log.debugf("intersects_vecs: [ %d, %d ], [ %d, %d ]", a1b1.x, a1b1.y, a2b2.x, a2b2.y)
+	// log.debug(result)
 	return result
 }
 
@@ -766,8 +750,10 @@ apply_constraint :: proc(a, b: u16) {
 	a_vert_ptr: VertPtr = orig(a_edge)^
 	b_vert_ptr: VertPtr = orig(b_edge)^
 
-	log.debug(a, b)
-	log.debug(a_edge, b_edge)
+	when ODIN_DEBUG {
+		log.debug(a, b)
+		log.debug(a_edge, b_edge)
+	}
 
 	assert(get_vert(a_vert_ptr) == state.vertices[a])
 	assert(get_vert(b_vert_ptr) == state.vertices[b])
@@ -777,72 +763,61 @@ apply_constraint :: proc(a, b: u16) {
 
 	for !left_of(b_vert_ptr, a_edge) || !right_of(b_vert_ptr, o_next(a_edge)) {
 		if dest(a_edge)^ == orig(b_edge)^ {
-			log.debug(
-				"edge already exists:",
-				state.mappings[orig(a_edge)^],
-				state.mappings[dest(a_edge)^],
-			)
+			when ODIN_DEBUG {
+				log.debug(
+					"edge already exists:",
+					state.mappings[orig(a_edge)^],
+					state.mappings[dest(a_edge)^],
+				)
+			}
 			return
 		}
 		a_edge = o_next(a_edge)
 	}
-	log.debug(
-		"found_pos",
-		state.mappings[orig(a_edge)^],
-		state.mappings[dest(a_edge)^],
-	)
+	when ODIN_DEBUG {
+		log.debug(
+			"found_pos",
+			state.mappings[orig(a_edge)^],
+			state.mappings[dest(a_edge)^],
+		)
+	}
 
 	aux := l_next(a_edge)
 	intersecting_queue := make([dynamic]EdgePtr, context.temp_allocator)
 
+	j := 0
 	main_loop: for dest(aux)^ != b_vert_ptr &&
 	    dest(o_next(aux))^ != b_vert_ptr {
-		// if i > 100 do break
+		defer j += 1
+		if j > 100 do break
 
-		// log.info(
-		// 	"aux[",
-		// 	"]:",
-		// 	state.mappings[orig(aux)^],
-		// 	state.mappings[dest(aux)^],
-		// )
 		aux_orig := get_vert(orig(aux)^)
 		aux_dest := get_vert(dest(aux)^)
+		k := 0
 		for !intersects(a_vert, b_vert, aux_orig, aux_dest) {
+			defer k += 1
 			if dest(aux)^ == b_vert_ptr do break main_loop
-			aux = r_prev(aux)
-			aux_orig := get_vert(orig(aux)^)
-			aux_dest := get_vert(dest(aux)^)
+			aux = l_next(aux)
+			aux_orig = get_vert(orig(aux)^)
+			aux_dest = get_vert(dest(aux)^)
 		}
 
 		append(&intersecting_queue, aux)
-		// log.debug(
-		// 	"aux",
-		// 	state.mappings[orig(aux)^],
-		// 	state.mappings[dest(aux)^],
-		// )
-		aux = r_prev(aux)
-		// log.debug(
-		// 	"r_prev(aux)",
-		// 	state.mappings[orig(aux)^],
-		// 	state.mappings[dest(aux)^],
-		// )
 		aux = sym(aux)
-		// log.debug(
-		// 	"sym(r_prev(aux))",
-		// 	state.mappings[orig(aux)^],
-		// 	state.mappings[dest(aux)^],
-		// )
+		aux = l_next(aux)
 	}
 
-	// for inter, i in intersecting_queue {
-	// 	log.info(
-	// 		"[",
-	// 		i,
-	// 		"]",
-	// 		state.mappings[orig(inter)^],
-	// 		state.mappings[dest(inter)^],
-	// 	)
-	// }
+	when ODIN_DEBUG {
+		for inter, i in intersecting_queue {
+			log.info(
+				"[",
+				i,
+				"]",
+				state.mappings[orig(inter)^],
+				state.mappings[dest(inter)^],
+			)
+		}
+	}
 
 	i := 0
 	for len(intersecting_queue) != 0 {
@@ -859,18 +834,13 @@ apply_constraint :: proc(a, b: u16) {
 			unordered_remove(&intersecting_queue, i)
 			i -= 1
 		}
-        if len(intersecting_queue) == 0 do break
+		if len(intersecting_queue) == 0 do break
 	}
 }
 
 apply :: #config(APPLY, true)
 @(disabled = !apply)
 apply_constraints :: proc(end_contours: []u16, on_curve: []bool) {
-	log.info("edges: ", state.edges[:state.next_edge])
-	log.info("data: ", state.data[:state.next_edge / 2])
-	log.info("mappings", state.mappings)
-	log.info("origin_edge_mapping", state.origin_to_edge_mapping)
-
 	c_start: u16 = 0
 	for c_end in end_contours {
 		defer c_start = c_end + 1
@@ -882,41 +852,6 @@ apply_constraints :: proc(end_contours: []u16, on_curve: []bool) {
 			}
 		}
 	}
-}
-
-@(disabled = true)
-apply_constraints_ :: proc(end_contours: []u16, on_curve: []bool) {
-	log.debug("edge amounts", len(state.edges) / 4)
-	log.debug("next edge", state.next_edge)
-	log.debug(end_contours)
-	processed_verts := make(map[u16]b8)
-	main_loop: for i := 0; i < int(state.next_edge); i += 2 {
-		edge := state.edges[i]
-		origin := state.mappings[orig(edge)^]
-
-		if processed_verts[origin] do continue
-
-		target := get_next_vert(end_contours, origin)
-
-		second_target := get_next_vert(end_contours, target)
-
-		edge_dest := state.mappings[dest(edge)^]
-		if edge_dest == target ||
-		   (!on_curve[target] && edge_dest == second_target) {
-			processed_verts[origin] = true
-			continue
-		}
-
-		opposite := sym(o_prev(o_prev(sym(edge))))
-		opposite_dest := state.mappings[orig(opposite)^]
-		if opposite_dest == target ||
-		   (!on_curve[target] && opposite_dest == second_target) {
-			processed_verts[origin] = true
-			swap(o_prev(sym(edge)))
-			continue
-		}
-	}
-
 }
 
 triangulate_vertices :: proc(
@@ -953,27 +888,35 @@ triangulate_vertices :: proc(
 	{ 	// sort vertices
 		quick_sort(0, len(vertices) - 1)
 
-		log.debug(state.mappings)
+		when ODIN_DEBUG {
+			log.debug(state.mappings)
+			for m, i in state.mappings {
+				log.debug(
+					"mappings[",
+					i,
+					"]=",
+					m,
+					"vertices[",
+					i,
+					"]=",
+					state.vertices[m],
+				)
 
-		for m, i in state.mappings {
-			log.debug(
-				"mappings[",
-				i,
-				"]=",
-				m,
-				"vertices[",
-				i,
-				"]=",
-				state.vertices[m],
-			)
-
+			}
 		}
 	}
 
 	le, re := delaunay(state.mappings)
 
-
 	apply_constraints(end_contours, on_curve)
+
+	when ODIN_DEBUG {
+		log.debug("mappings", state.mappings)
+		log.debug("edges", state.edges[:state.next_edge])
+		log.debug("data", state.data[:state.next_edge / 2])
+		log.debug("edge_mapp", state.origin_to_edge_mapping)
+		log.debug("next_avail", state.available_edge)
+	}
 
 	triangles_dyn := make([dynamic]Triangle)
 	uvs_dyn := make([dynamic]TriangleUV)
@@ -988,3 +931,77 @@ import "core:fmt"
 import "core:log"
 import "core:os"
 import "core:testing"
+
+@(test)
+math_test :: proc(t: ^testing.T) {
+	a, b: i128
+	test_values := [?][3]i128 {
+		{110, 0, 12100},
+		{110, 730, 545000},
+		{160, 46, 27716},
+		{160, 648, 445504},
+	}
+
+	for values in test_values {
+		x := values.x
+		y := values.y
+		z := values.z
+		log.infof("testing: %d * %d + %d * %d == %d", x, x, y, y, z)
+		ok := testing.expect(t, x * x + y * y == z)
+		if !ok {
+			log.errorf("%d * %d + %d * %d == %d", x, x, y, y, x * x + y * y)
+		}
+	}
+
+	{
+		matrix_value: matrix[4, 4]i128
+		matrix_value[0] = {110, 110, 160, 160}
+		matrix_value[1] = {0, 730, 46, 648}
+		matrix_value[2] = {12100, 545000, 27716, 445504}
+		matrix_value[3] = {1, 1, 1, 1}
+		log.info(matrix_value)
+		log.info(la.transpose(matrix_value))
+		log.info(la.determinant(matrix_value))
+	}
+
+	{
+		matrix_value: matrix[4, 4]i128
+		matrix_value[0] = {110, 0, 12100, 1}
+		matrix_value[1] = {110, 730, 545000, 1}
+		matrix_value[2] = {160, 46, 27716, 1}
+		matrix_value[3] = {160, 684, 445504, 1}
+		log.info(matrix_value)
+		log.info(la.determinant(matrix_value))
+	}
+
+	{
+		matrix_3_3: matrix[3, 3]i128
+		matrix_3_3[0] = {110, 0, 12100}
+		matrix_3_3[1] = {110, 730, 545000}
+		matrix_3_3[2] = {160, 46, 27716}
+		matrix_3_2: matrix[3, 3]i128
+		matrix_3_2[0] = {110, 0, 12100}
+		matrix_3_2[1] = {110, 730, 545000}
+		matrix_3_2[2] = {160, 684, 493456}
+		matrix_3_1: matrix[3, 3]i128
+		matrix_3_1[0] = {110, 0, 12100}
+		matrix_3_1[1] = {160, 46, 27716}
+		matrix_3_1[2] = {160, 684, 493456}
+		matrix_3_0: matrix[3, 3]i128
+		matrix_3_0[0] = {110, 730, 545000}
+		matrix_3_0[1] = {160, 46, 27716}
+		matrix_3_0[2] = {160, 684, 493456}
+
+		d0 := la.determinant(matrix_3_0)
+		d1 := la.determinant(matrix_3_1)
+		d2 := la.determinant(matrix_3_2)
+		d3 := la.determinant(matrix_3_3)
+		log.info(d0, d1, d2, d3)
+		log.info(d0 - d1 + d2 - d3)
+	}
+
+	{
+		log.info(incircle_fast({{110, 0}, {110, 730}, {160, 46}, {160, 684}}))
+	}
+
+}

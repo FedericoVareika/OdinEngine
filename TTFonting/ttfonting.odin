@@ -501,6 +501,7 @@ parse_simple_glyf :: proc(
 		int(glyf_desc.n_contours),
 		u16be,
 	)
+    copy_slice(simple_glyf.end_pts_of_contours, simple_glyf.end_pts_of_contours)
 
 	total_bytes += bytes
 
@@ -518,6 +519,7 @@ parse_simple_glyf :: proc(
 		u8,
 	)
 	total_bytes += bytes
+    copy_slice(simple_glyf.instructions, simple_glyf.instructions)
 
 	n_points := int(
 		simple_glyf.end_pts_of_contours[len(simple_glyf.end_pts_of_contours) - 1] +
@@ -525,6 +527,7 @@ parse_simple_glyf :: proc(
 	)
 	log.info("n_points", n_points)
 	flags := make([dynamic]OutlineFlags, context.temp_allocator)
+    defer delete(flags)
 
 	// Read flags, append midpoints if need be, and adjust the 
 	// end_pts_of_contours
@@ -653,15 +656,15 @@ parse_coords :: proc(
 	prev: i16 = 0
 
 	prev_was_midpoint := false
-	midpoint_offset: i16 = 0
+	midpoint_value: i16 = 0
 
 	for &v, i in coords {
 		if prev_was_midpoint {
 			assert(.midpoint not_in flags[i])
 			prev_was_midpoint = false
-			v = prev + midpoint_offset
+			v = midpoint_value
 			prev = v
-			midpoint_offset = 0
+			midpoint_value = 0
 			continue
 		}
 
@@ -692,8 +695,8 @@ parse_coords :: proc(
 		log.info("bytes[", i, "]:", bytes)
 
 		if .midpoint in flags[i] {
-			midpoint_offset = offset / 2
-			offset /= 2
+			midpoint_value = prev + offset
+			offset /= 2 
 			prev_was_midpoint = true
 		} else {
 			prev_was_midpoint = false

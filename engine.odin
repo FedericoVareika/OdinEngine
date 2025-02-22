@@ -197,7 +197,7 @@ main :: proc() {
 	{
         glyfs := ttf.parse_ttf("assets/fonts/JetBrainsMono-Thin.ttf")
 
-        glyf := glyfs['9']
+        glyf := glyfs[':']
 
 
 		coords := glyf.value.(ttf.SimpleGlyf).coords
@@ -661,6 +661,7 @@ update_time :: proc() {
 render :: proc() {
 	using gl
 	gl.ClearColor(0.96, 0.93, 0.89, 1)
+	// gl.ClearColor(0, 0, 0, 1)
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
 	for model, idx in state.models {

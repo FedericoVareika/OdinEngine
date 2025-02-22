@@ -13,5 +13,5 @@ void main() {
     // if (inner) {pct_area = 1 - pct_area;}
     
     frag_color = vec4(color, pct_area);
-    // frag_color = vec4(color, 0);
+    // frag_color = vec4(color, 1);
 }
