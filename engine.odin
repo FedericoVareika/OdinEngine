@@ -38,18 +38,14 @@ b: [3]utils.Vec2f = {
 
 selected_vert := 0
 
-letter :: #config(LETTER, 'A')
-glyf_vec_sbo: u32
-glyf_on_curves_sbo: u32
-glyf_indices_sbo: u32
-glyf_uvs_sbo: u32
-glyf_triangles: []utils.Triangle
-glyf_uvs: []utils.TriangleUV
-glyf: ttf.Glyf
-glyf_npoints: int
+// letter :: #config(LETTER, '7')
+glyf_sbos: utils.GlyfSBOs
+glyf_info: [128]utils.GlyfInfo
+ttf_info: ttf.TTFInfo
+glyf_metrics: ttf.ASCII_Metrics
 
 main :: proc() {
-    context.logger = log.create_console_logger()
+	context.logger = log.create_console_logger()
 	glfw.Init()
 	defer glfw.Terminate()
 
@@ -65,6 +61,7 @@ main :: proc() {
 
 		WindowHint(CONTEXT_VERSION_MINOR, 3)
 		WindowHint(OPENGL_PROFILE, OPENGL_CORE_PROFILE)
+		WindowHint(SAMPLES, 4)
 	}
 
 	window: glfw.WindowHandle
@@ -84,6 +81,8 @@ main :: proc() {
 		gl.load_up_to(3, 3, glfw.gl_set_proc_address)
 		gl.Enable(gl.DEPTH_TEST)
 		gl.Enable(gl.BLEND)
+		gl.Disable(gl.MULTISAMPLE)
+		// gl.Enable(gl.SAMPLE_SHADING)
 		// gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
 		gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
@@ -137,6 +136,13 @@ main :: proc() {
 		)
 
 		mouse.sensitivity = 1
+	}
+	defer {
+		delete(state.graphics.VAOs)
+		delete(state.graphics.VBOs)
+		delete(state.graphics.EBOs)
+		delete(state.graphics.indices)
+		delete(state.graphics.shaders)
 	}
 
 
@@ -195,161 +201,15 @@ main :: proc() {
 	}
 
 	{
-        glyfs := ttf.parse_ttf("assets/fonts/JetBrainsMono-Thin.ttf")
-
-        glyf := glyfs[':']
-
-
-		coords := glyf.value.(ttf.SimpleGlyf).coords
-		fmt.println(coords)
-		fmt.println(glyf.description)
-
-		end_contours : []u16
-        defer delete(end_contours)
-		{
-            end_contours_be := glyf.value.(ttf.SimpleGlyf).end_pts_of_contours
-            end_contours = make([]u16, len(end_contours_be))
-			for &c, idx in end_contours {
-				c = cast(u16)end_contours_be[idx]
-			}
-		}
-
-		bounding_rect: utils.Rect = {
-			pos  = {f32(glyf.description.x_min), f32(glyf.description.y_min)},
-			size = {
-				f32(glyf.description.x_max - glyf.description.x_min),
-				f32(glyf.description.y_max - glyf.description.y_min),
-			},
-		}
-
-        // inv_scale := if bounding_rect.size.x  
-		fmt.println(bounding_rect)
-
-		// glyf_coordinates := make([]utils.Coordf, len(coords))
-		glyf_vertices := make([]utils.Vec2f, len(coords))
-		glyf_on_curves := make([]b32, len(coords))
-
-		for &v, idx in glyf_vertices {
-			coord_f: utils.Vec2f = {f32(coords[idx].x), f32(coords[idx].y)}
-			// fmt.printf("%f,%f\n", coord_f.x, coord_f.y)
-			// fmt.println(coord_f, coords[idx])
-			v = coord_f - bounding_rect.pos
-			v /= bounding_rect.size.y
-			v -= {0.5, 0.5}
-			fmt.printf("%f,%f\n", v.x, v.y)
-		}
-
-		for &c, idx in glyf_on_curves {
-			c = b32(coords[idx].on_curve)
-		}
-
-		fmt.println(len(glyf_vertices))
-        glyf_npoints = len(glyf_vertices)
-		// assert(len(glyf_vertices) == 12)
-		// assert(len(glyf_vertices) == 4)
-
-		{
-			x, y, on_curve := soa_unzip(coords)
-			glyf_triangles, glyf_uvs = utils.triangulate_vertices(
-				soa_zip(x = x, y = y),
-				end_contours,
-                on_curve,
-			)
-			fmt.println("glyf_triangles", glyf_triangles)
-            log.info("uvs size", size_of(glyf_uvs))
-            log.info("uvs size", size_of(glyf_uvs[0]))
-		}
-
-		using gl
-		defer BindBuffer(SHADER_STORAGE_BUFFER, 0)
-
-		SBOs: [4]u32
-		GenBuffers(4, &SBOs[0])
-		fmt.println(SBOs)
-
-		BindBuffer(SHADER_STORAGE_BUFFER, SBOs[0])
-		BufferData(
-			SHADER_STORAGE_BUFFER,
-			size_of(utils.Vec2f) * len(glyf_vertices),
-			raw_data(glyf_vertices[:]),
-			STATIC_DRAW,
+		glyfs, metrics, info := ttf.parse_ttf(
+			"assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",
 		)
-		BindBufferBase(SHADER_STORAGE_BUFFER, 0, SBOs[0])
-		glyf_vec_sbo = SBOs[0]
-
-		BindBuffer(SHADER_STORAGE_BUFFER, SBOs[1])
-		BufferData(
-			SHADER_STORAGE_BUFFER,
-			size_of(b32) * len(glyf_on_curves),
-			raw_data(glyf_on_curves[:]),
-			STATIC_DRAW,
-		)
-		BindBufferBase(SHADER_STORAGE_BUFFER, 1, SBOs[1])
-		glyf_on_curves_sbo = SBOs[1]
-
-		BindBuffer(SHADER_STORAGE_BUFFER, SBOs[2])
-		BufferData(
-			SHADER_STORAGE_BUFFER,
-			size_of(utils.Triangle) * len(glyf_triangles),
-			raw_data(glyf_triangles),
-			STATIC_DRAW,
-		)
-		BindBufferBase(SHADER_STORAGE_BUFFER, 2, SBOs[2])
-		glyf_indices_sbo = SBOs[2]
-
-		BindBuffer(SHADER_STORAGE_BUFFER, SBOs[3])
-		BufferData(
-			SHADER_STORAGE_BUFFER,
-			size_of(utils.TriangleUV) * len(glyf_uvs),
-			raw_data(glyf_uvs),
-			STATIC_DRAW,
-		)
-		BindBufferBase(SHADER_STORAGE_BUFFER, 1, SBOs[3])
-		glyf_uvs_sbo = SBOs[3]
-
-		{
-			// Read back vertices SSBO
-			vertices_data := make([]utils.Vec2f, len(glyf_vertices))
-			BindBuffer(SHADER_STORAGE_BUFFER, SBOs[0])
-			gl.GetBufferSubData(
-				SHADER_STORAGE_BUFFER,
-				0,
-				size_of(utils.Vec2f) * len(glyf_vertices),
-				raw_data(vertices_data),
-			)
-			log.debug("Vertices SSBO:", vertices_data)
-
-			// Read back on_curves SSBO
-			on_curves_data := make([]b32, len(glyf_on_curves))
-			BindBuffer(SHADER_STORAGE_BUFFER, SBOs[1])
-			gl.GetBufferSubData(
-				SHADER_STORAGE_BUFFER,
-				0,
-				size_of(b32) * len(glyf_on_curves),
-				raw_data(on_curves_data),
-			)
-			log.debug("OnCurves SSBO:", on_curves_data)
-
-			// Read back indices SSBO
-			indices_data := make([]utils.Triangle, len(glyf_triangles))
-			BindBuffer(SHADER_STORAGE_BUFFER, SBOs[2])
-			gl.GetBufferSubData(
-				SHADER_STORAGE_BUFFER,
-				0,
-				size_of(utils.Triangle) * len(glyf_triangles),
-				raw_data(indices_data),
-			)
-			log.debug("Indices SSBO(", len(indices_data), ":", indices_data)
-
-			uvs_data := make([]utils.TriangleUV, len(glyf_uvs))
-			BindBuffer(SHADER_STORAGE_BUFFER, SBOs[3])
-			gl.GetBufferSubData(
-				SHADER_STORAGE_BUFFER,
-				0,
-				size_of(utils.TriangleUV) * len(glyf_uvs),
-				raw_data(uvs_data),
-			)
-			log.debug("Uvs SSBO(", len(uvs_data), ":", uvs_data)
+		ttf_info = info
+		glyf_metrics = metrics
+		log.info(glyf_metrics)
+		glyf_sbos, glyf_info = utils.load_glyphs(glyfs, ttf_info)
+		for info, idx in glyf_info {
+			log.info("[", idx, "]", info)
 		}
 	}
 
@@ -632,17 +492,17 @@ update :: proc() {
 	// 	}
 	// }
 
-    if UI.do_button("Prev", Rect({{20, 20}, {100, 50}}), 1) {
-        selected_vert -= 1 
-        selected_vert %%= glyf_npoints 
-        log.debug("prev selected vert", selected_vert)
-    }
-    
-    if UI.do_button("Next", Rect({{140, 20}, {100, 50}}), 2) {
-        selected_vert += 1 
-        selected_vert %%= glyf_npoints 
-        log.debug("next selected vert", selected_vert)
-    }
+	if UI.do_button("Prev", Rect({{20, 20}, {100, 50}}), 1) {
+		selected_vert -= 1
+		// selected_vert %%= glyf_npoints 
+		log.debug("prev selected vert", selected_vert)
+	}
+
+	if UI.do_button("Next", Rect({{140, 20}, {100, 50}}), 2) {
+		selected_vert += 1
+		// selected_vert %%= glyf_npoints 
+		log.debug("next selected vert", selected_vert)
+	}
 
 	update_time()
 }
@@ -746,8 +606,48 @@ render_bezier :: proc() {
 render_glyf :: proc() {
 	font := state.graphics.shaders["font"]
 	gl.UseProgram(font)
-    utils.set_val(font, "selected_vert", i32(selected_vert))
-	gl.DrawArrays(gl.TRIANGLES, 0, i32(len(glyf_triangles)) * 3)
-	// gl.DrawArrays(gl.POINTS, 0, i32(len(glyf_triangles)) * 3)
-	// gl.DrawBuffer(glyf_sbo)
+
+	hello := "\"Avril\""
+	// hello := "Q"
+
+	scale := utils.Vec2f{1 / state.window.size.x, 1 / state.window.size.y}
+    scale *= 0.2
+	// scale: f32 = 0.001
+	// scale *= 0.01 * f32(selected_vert + 1)
+	// log.info(f32(ttf_info.y_max - ttf_info.y_min) * scale)
+	// scale *= (f32(math.sin(glfw.GetTime())) + 1) / f32(selected_vert)
+	utils.set_val(font, "scale", scale)
+	utils.set_val(font, "color", utils.Vec3f{0, 0, 0})
+
+	translation_before_scaling := utils.Vec2f{}
+	translation_after_scaling := utils.Vec2f{-1, -0.5}
+
+	for char in hello {
+		this_glyf_info := glyf_info[char %% 128]
+		this_glyf_metrics := glyf_metrics[char %% 128]
+		translation_before_scaling.x += f32(
+			this_glyf_metrics.hor_metric.adv_width,
+		)
+		utils.set_val(
+			font,
+			"translation_before_scaling",
+			translation_before_scaling,
+		)
+		utils.set_val(
+			font,
+			"translation_after_scaling",
+			translation_after_scaling,
+		)
+
+		utils.set_val(font, "vertex_offset", i32(this_glyf_info.vertex_offset))
+		utils.set_val(
+			font,
+			"triangle_offset",
+			i32(this_glyf_info.triangle_offset),
+		)
+		gl.DrawArrays(gl.TRIANGLES, 0, i32(this_glyf_info.triangle_count) * 3)
+		// gl.DrawArrays(gl.POINTS, 0, i32(this_glyf_info.triangle_count) * 3)
+
+	}
+
 }

@@ -1,31 +1,42 @@
 package ttfonting
 
-import "core:testing"
-import "core:log"
 import "core:fmt"
+import "core:log"
+import "core:testing"
 
 @(test)
 main_test :: proc(_: ^testing.T) {
-    // parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf", 1) // A
-    // parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf", 26) // B
-    // parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf", 27) // C
+	// parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf", 1) // A
+	// parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf", 26) // B
+	// parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf", 27) // C
 
-    glyfs := parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf")
-    // glyfs := parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf", 'U')
-    // log.info(len(glyfs['9'].value.(SimpleGlyf).coords))
-    // log.info(glyfs['9'].value.(SimpleGlyf).coords)
-    log.info(glyfs['D'].value.(SimpleGlyf).end_pts_of_contours)
+	glyfs, _, _ := parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf")
+	// glyfs := parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf", 'U')
+	// log.info(len(glyfs['9'].value.(SimpleGlyf).coords))
+	// log.info(glyfs['9'].value.(SimpleGlyf).coords)
+	log.info(glyfs['\"'].value.(CompoundGlyf))
 
-    for coord in glyfs['D'].value.(SimpleGlyf).coords {
-        fmt.printf("%d,%d\n", coord.x, coord.y)
-    }
+    /*
+	for coord in glyfs['9'].value.(SimpleGlyf).coords {
+		fmt.printf("%d,%d\n", coord.x, coord.y)
+	}
+    */
 
-    // for glyf in glyfs {
+	for glyf in glyfs {
+		#partial switch v in glyf.value {
+		case SimpleGlyf:
+			delete(v.coords)
+			delete(v.end_pts_of_contours)
+		}
+	}
 
-    //     delete(glyf.value.(SimpleGlyf).end_pts_of_contours)
-    //     delete(glyf.value.(SimpleGlyf).instructions)
-    //     delete(glyf.value.(SimpleGlyf).coords)
-    // }
+
+	// for glyf in glyfs {
+
+	//     delete(glyf.value.(SimpleGlyf).end_pts_of_contours)
+	//     delete(glyf.value.(SimpleGlyf).instructions)
+	//     delete(glyf.value.(SimpleGlyf).coords)
+	// }
 }
 
 

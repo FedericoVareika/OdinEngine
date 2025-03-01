@@ -59,9 +59,18 @@ State :: struct {
 state: State
 
 @(require_results)
-get_vert :: #force_inline proc(v: VertPtr) -> Vertex {
+get_vert_from_ptr :: #force_inline proc(v: VertPtr) -> Vertex {
 	return state.vertices[state.mappings[v]]
-	// return state.vertices[v]
+}
+
+@(require_results)
+get_vert_from_real :: #force_inline proc(v: u16) -> Vertex {
+	return state.vertices[v]
+}
+
+get_vert :: proc {
+	get_vert_from_ptr,
+	get_vert_from_real,
 }
 
 @(require_results)
@@ -139,6 +148,16 @@ dest :: #force_inline proc(e: EdgePtr) -> ^VertPtr {
 }
 
 @(require_results)
+real_orig :: proc(e: EdgePtr) -> u16 {
+	return state.mappings[orig(e)^]
+}
+
+@(require_results)
+real_dest :: proc(e: EdgePtr) -> u16 {
+	return state.mappings[dest(e)^]
+}
+
+@(require_results)
 alloc_edge :: proc() -> EdgePtr {
 	if state.available_edge == NIL {
 		e := state.next_edge
@@ -177,8 +196,8 @@ make_edge :: proc(v1, v2: VertPtr) -> (e: EdgePtr) {
 	dest(e)^ = v2
 	// log.debug("orig(e)^", orig(e)^)
 	// log.debug("state.mappings[orig(e)^]", state.mappings[orig(e)^])
-	state.origin_to_edge_mapping[state.mappings[orig(e)^]] = e
-	state.origin_to_edge_mapping[state.mappings[dest(e)^]] = sym(e)
+	state.origin_to_edge_mapping[real_orig(e)] = e
+	state.origin_to_edge_mapping[real_dest(e)] = sym(e)
 
 	return
 }
@@ -229,10 +248,10 @@ swap :: proc(e: EdgePtr, loc := #caller_location) {
 	// dest(e)^ = orig(l_next(b))^
 	orig(e)^ = dest(a)^
 	dest(e)^ = dest(b)^
-	state.origin_to_edge_mapping[state.mappings[orig(e)^]] = e
-	state.origin_to_edge_mapping[state.mappings[dest(e)^]] = sym(e)
-	state.origin_to_edge_mapping[state.mappings[orig(a)^]] = a
-	state.origin_to_edge_mapping[state.mappings[orig(b)^]] = b
+	state.origin_to_edge_mapping[real_orig(e)] = e
+	state.origin_to_edge_mapping[real_dest(e)] = sym(e)
+	state.origin_to_edge_mapping[real_orig(a)] = a
+	state.origin_to_edge_mapping[real_orig(b)] = b
 }
 
 import la "core:math/linalg"
@@ -385,8 +404,31 @@ incircle :: proc {
 	incircle_vec2,
 }
 
-init_mappings :: proc() {
+collinear :: proc(a, b, c: u16) -> bool {
+	a_vert := get_vert(a)
+	b_vert := get_vert(b)
+	c_vert := get_vert(c)
+
+	m: matrix[3, 3]i128
+	m[0] = {i128(a_vert.x), i128(b_vert.x), i128(c_vert.x)}
+	m[1] = {i128(a_vert.y), i128(b_vert.y), i128(c_vert.y)}
+	m[2] = {1, 1, 1}
+
+	d := la.determinant(m)
+	return abs(d) <= EPSILON
+}
+
+init_mappings_wo_len :: proc() {
 	for &m, i in state.mappings do m = u16(i)
+}
+
+init_mappings_w_len :: proc(verts: int) {
+	for i in 0 ..< verts do state.mappings[i] = u16(i)
+}
+
+init_mappings :: proc {
+	init_mappings_w_len,
+	init_mappings_wo_len,
 }
 
 switch_places :: proc(#any_int i, j: int) {
@@ -577,13 +619,192 @@ get_next_vert_wo_contour :: proc(
 
 @(require_results)
 get_next_vert_wi_contour :: proc(start, end, vert: u16) -> (next: u16) {
-	if vert == end do return start
+	if vert >= end do return start + (vert - end)
 	return vert + 1
 }
 
 get_next_vert :: proc {
 	get_next_vert_wo_contour,
 	get_next_vert_wi_contour,
+}
+
+is_constraint_edge :: proc(
+	end_contours: []u16,
+	on_curve: []bool,
+	e: EdgePtr,
+) -> bool {
+	orig_vert := real_orig(e)
+	dest_vert := real_dest(e)
+
+	s, e := get_contour(end_contours, orig_vert)
+
+	next_orig_vert := get_next_vert(s, e, orig_vert)
+	next_dest_vert := get_next_vert(s, e, dest_vert)
+	if dest_vert == next_orig_vert do return true
+	if orig_vert == next_dest_vert do return true
+
+	if !on_curve[next_orig_vert] {
+		next_next_vert := get_next_vert(s, e, next_orig_vert)
+		if dest_vert == next_next_vert do return true
+	}
+
+	if !on_curve[next_dest_vert] {
+		next_next_vert := get_next_vert(s, e, next_dest_vert)
+		if orig_vert == next_next_vert do return true
+	}
+
+	return false
+}
+
+append_valid_triangles :: proc(
+	dest_dyn: ^[dynamic]Triangle,
+	uvs_dyn: ^[dynamic]TriangleUV,
+	end_contours: []u16,
+	on_curve: []bool,
+	visited_edges: ^[]bool,
+	start_edge: EdgePtr,
+) {
+	first := true
+	start_edge := start_edge
+	for {
+		defer first = false
+		triangle_constraint_edge := start_edge
+
+		is_curve := false
+		off_curve_idx := 0
+
+		new_uv: TriangleUV = {{{0, 1}, true}, {{0, 1}, true}, {{0, 1}, true}}
+
+		new_tri: Triangle
+		prev_vert := real_orig(start_edge)
+		for k in 0 ..< 3 {
+			if first && !on_curve[real_orig(start_edge)] {
+				is_curve = true
+				off_curve_idx = k
+			}
+
+			visited_edges[start_edge] = true
+			new_tri[k] = u32(real_orig(start_edge))
+			start_edge = r_prev(start_edge)
+		}
+		assert(start_edge == triangle_constraint_edge)
+
+		inner_edge := false
+		if off_curve_idx == 2 do inner_edge = true
+		if off_curve_idx == 0 do is_curve = false
+		if first {
+			a := u16(new_tri[0])
+			b := u16(new_tri[1])
+			c := u16(new_tri[2])
+			a_s, a_e := get_contour(end_contours, a)
+			b_s, b_e := get_contour(end_contours, b)
+			c_s, c_e := get_contour(end_contours, c)
+			consecutive :=
+				!inner_edge &&
+					(get_next_vert(a_s, a_e, a) == b &&
+								get_next_vert(b_s, b_e, b) == c ||
+							get_next_vert(b_s, b_e, b) == c &&
+								get_next_vert(c_s, c_e, c) == a ||
+							get_next_vert(c_s, c_e, c) == a &&
+								get_next_vert(a_s, a_e, a) == b) ||
+				inner_edge &&
+					(get_next_vert(a_s, a_e, a) == c &&
+								get_next_vert(c_s, c_e, c) == b ||
+							get_next_vert(b_s, b_e, b) == a ||
+							get_next_vert(a_s, a_e, a) == c &&
+								get_next_vert(c_s, c_e, c) == b &&
+								get_next_vert(b_s, b_e, b) == a)
+			if !consecutive do is_curve = false
+		}
+
+		if is_curve {
+			after := inner_edge ? off_curve_idx + 1 : off_curve_idx + 2
+			after %%= 3
+			before := inner_edge ? off_curve_idx + 2 : off_curve_idx + 1
+			before %%= 3
+
+			// if get_next_vert(s, e, new_tri[before]) != 
+
+			new_uv[before].uv = {0, 0}
+			new_uv[off_curve_idx].uv = {0.5, 0}
+			new_uv[after].uv = {1, 1}
+			if inner_edge {
+				new_uv[0].z = false
+				new_uv[1].z = false
+				new_uv[2].z = false
+			}
+		}
+
+		// new_uv = {{{0, 1}, true}, {{0, 1}, true}, {{0, 1}, true}}
+
+		append(dest_dyn, new_tri)
+		append(uvs_dyn, new_uv)
+
+		start_edge = o_prev(start_edge)
+		if is_constraint_edge(end_contours, on_curve, start_edge) {
+			break
+		}
+	}
+}
+
+get_edge :: proc(start, end: u16) -> EdgePtr {
+	e := state.origin_to_edge_mapping[start]
+	for real_dest(e) != end {
+		e = o_next(e)
+	}
+
+	return e
+}
+
+traverse_triangles_2 :: proc(
+	dest_dyn: ^[dynamic]Triangle,
+	uvs_dyn: ^[dynamic]TriangleUV,
+	end_contours: []u16,
+	on_curve: []bool,
+) {
+	visited_edges := make([]bool, state.next_edge)
+	defer delete(visited_edges)
+	// log.info(end_contours)
+
+	c_start: u16 = 0
+	for c_end in end_contours {
+		defer c_start = c_end + 1
+		// log.info(c_start, c_end)
+		for i := c_start; i <= c_end; i += 1 {
+			next_vert := get_next_vert(c_start, c_end, i)
+			constraint_edge := get_edge(i, next_vert)
+			assert(constraint_edge < state.next_edge)
+
+			// Append valid trianges 
+			// (the ones to the right of the constraint edge)
+			if !visited_edges[constraint_edge] {
+				append_valid_triangles(
+					dest_dyn,
+					uvs_dyn,
+					end_contours,
+					on_curve,
+					&visited_edges,
+					constraint_edge,
+				)
+			}
+
+			next_next_vert := get_next_vert(c_start, c_end, next_vert)
+			if !on_curve[next_vert] &&
+			   !collinear(i, next_vert, next_next_vert) {
+				constraint_edge = get_edge(i, next_next_vert)
+				if !visited_edges[constraint_edge] {
+					append_valid_triangles(
+						dest_dyn,
+						uvs_dyn,
+						end_contours,
+						on_curve,
+						&visited_edges,
+						constraint_edge,
+					)
+				}
+			}
+		}
+	}
 }
 
 cut :: #config(CUT, true)
@@ -617,8 +838,8 @@ traverse_triangles :: proc(
 				defer current_edge = l_next(current_edge)
 				visited_edges[current_edge] = true
 
-				current_origin := state.mappings[orig(current_edge)^]
-				current_dest := state.mappings[dest(current_edge)^]
+				current_origin := real_orig(current_edge)
+				current_dest := real_dest(current_edge)
 
 				new_tri[tri_idx] = u32(current_origin)
 			}
@@ -703,7 +924,7 @@ traverse_triangles :: proc(
 				}
 			}
 
-			// new_uv = {{{0, 1}, true}, {{0, 1}, true}, {{0, 1}, true}}
+			new_uv = {{{0, 1}, true}, {{0, 1}, true}, {{0, 1}, true}}
 
 			append(dest_dyn, new_tri)
 			append(uvs_dyn, new_uv)
@@ -766,8 +987,8 @@ apply_constraint :: proc(a, b: u16) {
 			when ODIN_DEBUG {
 				log.debug(
 					"edge already exists:",
-					state.mappings[orig(a_edge)^],
-					state.mappings[dest(a_edge)^],
+					real_orig(a_edge),
+					real_dest(a_edge),
 				)
 			}
 			return
@@ -775,11 +996,7 @@ apply_constraint :: proc(a, b: u16) {
 		a_edge = o_next(a_edge)
 	}
 	when ODIN_DEBUG {
-		log.debug(
-			"found_pos",
-			state.mappings[orig(a_edge)^],
-			state.mappings[dest(a_edge)^],
-		)
+		log.debug("found_pos", real_orig(a_edge), real_dest(a_edge))
 	}
 
 	aux := l_next(a_edge)
@@ -809,20 +1026,12 @@ apply_constraint :: proc(a, b: u16) {
 
 	when ODIN_DEBUG {
 		for inter, i in intersecting_queue {
-			log.info(
-				"[",
-				i,
-				"]",
-				state.mappings[orig(inter)^],
-				state.mappings[dest(inter)^],
-			)
+			log.info("[", i, "]", real_orig(inter), real_dest(inter))
 		}
 	}
 
 	i := 0
 	for len(intersecting_queue) != 0 {
-		defer i = (i + 1) % len(intersecting_queue)
-
 		e := intersecting_queue[i]
 		swap(e)
 		e_origin := get_vert(orig(e)^)
@@ -835,6 +1044,7 @@ apply_constraint :: proc(a, b: u16) {
 			i -= 1
 		}
 		if len(intersecting_queue) == 0 do break
+		i = (i + 1) %% len(intersecting_queue)
 	}
 }
 
@@ -847,14 +1057,18 @@ apply_constraints :: proc(end_contours: []u16, on_curve: []bool) {
 		for i := c_start; i <= c_end; i += 1 {
 			next_vert := get_next_vert(c_start, c_end, i)
 			apply_constraint(i, next_vert)
-			if !on_curve[next_vert] {
-				apply_constraint(i, get_next_vert(c_start, c_end, next_vert))
+			next_next_vert := get_next_vert(c_start, c_end, next_vert)
+			if !on_curve[next_vert] &&
+			   !collinear(i, next_vert, next_next_vert) {
+				apply_constraint(i, next_next_vert)
 			}
 		}
 	}
 }
 
-triangulate_vertices :: proc(
+version :: #config(V, 2)
+
+triangulate_vertices_w_ret :: proc(
 	vertices: #soa[]Vertex,
 	end_contours: []u16,
 	on_curve: []bool,
@@ -920,11 +1134,99 @@ triangulate_vertices :: proc(
 
 	triangles_dyn := make([dynamic]Triangle)
 	uvs_dyn := make([dynamic]TriangleUV)
-	traverse_triangles(&triangles_dyn, &uvs_dyn, end_contours, on_curve)
+	when version == 1 {
+		traverse_triangles(&triangles_dyn, &uvs_dyn, end_contours, on_curve)
+	} else when version == 2 {
+		traverse_triangles_2(&triangles_dyn, &uvs_dyn, end_contours, on_curve)
+	}
 	resize_dynamic_array(&triangles_dyn, len(triangles_dyn))
 	resize_dynamic_array(&uvs_dyn, len(triangles_dyn))
 
 	return triangles_dyn[:], uvs_dyn[:]
+}
+
+init_state :: proc(max_verts: u32) {
+	n_edges := max_verts * 3
+	state.edges = make([]EdgePtr, n_edges * 4)
+	state.data = make([]EdgePtr, n_edges * 2)
+
+	state.mappings = make([]u16, max_verts)
+	state.origin_to_edge_mapping = make([]EdgePtr, max_verts)
+
+	state.next_edge = 0
+	state.available_edge = NIL
+}
+
+reset_state :: proc() {
+	state.next_edge = 0
+	state.available_edge = NIL
+}
+
+deinit_state :: proc() {
+	delete(state.edges)
+	delete(state.data)
+	delete(state.mappings)
+	delete(state.origin_to_edge_mapping)
+}
+
+// import ttf "../TTFonting"
+triangulate_vertices_w_inout :: proc(
+	vertices: #soa[]Vertex,
+	end_contours: []u16,
+	on_curve: []bool,
+	triangles: ^[dynamic]Triangle,
+	uvs: ^[dynamic]TriangleUV,
+) {
+	if len(vertices) == 0 do return
+
+	{ 	// init state
+		state.vertices = vertices
+		init_mappings(len(vertices))
+	}
+
+	{ 	// sort vertices
+		quick_sort(0, len(vertices) - 1)
+
+		// when ODIN_DEBUG {
+		// 	log.debug(state.mappings)
+		// 	for m, i in state.mappings {
+		// 		log.debug(
+		// 			"mappings[",
+		// 			i,
+		// 			"]=",
+		// 			m,
+		// 			"vertices[",
+		// 			i,
+		// 			"]=",
+		// 			state.vertices[m],
+		// 		)
+
+		// 	}
+		// }
+	}
+
+	le, re := delaunay(state.mappings[:len(vertices)])
+
+	apply_constraints(end_contours, on_curve)
+
+	when ODIN_DEBUG {
+		log.debug("mappings", state.mappings)
+		log.debug("edges", state.edges[:state.next_edge])
+		log.debug("data", state.data[:state.next_edge / 2])
+		log.debug("edge_mapp", state.origin_to_edge_mapping)
+		log.debug("next_avail", state.available_edge)
+	}
+
+	when version == 1 {
+		traverse_triangles(triangles, uvs, end_contours, on_curve)
+	} else when version == 2 {
+		traverse_triangles_2(triangles, uvs, end_contours, on_curve)
+	}
+}
+
+triangulate_vertices :: proc {
+	triangulate_vertices_w_ret,
+	triangulate_vertices_w_inout,
 }
 
 import "core:fmt"
@@ -932,76 +1234,12 @@ import "core:log"
 import "core:os"
 import "core:testing"
 
+import ttf "../TTFonting"
+
 @(test)
-math_test :: proc(t: ^testing.T) {
-	a, b: i128
-	test_values := [?][3]i128 {
-		{110, 0, 12100},
-		{110, 730, 545000},
-		{160, 46, 27716},
-		{160, 648, 445504},
-	}
-
-	for values in test_values {
-		x := values.x
-		y := values.y
-		z := values.z
-		log.infof("testing: %d * %d + %d * %d == %d", x, x, y, y, z)
-		ok := testing.expect(t, x * x + y * y == z)
-		if !ok {
-			log.errorf("%d * %d + %d * %d == %d", x, x, y, y, x * x + y * y)
-		}
-	}
-
-	{
-		matrix_value: matrix[4, 4]i128
-		matrix_value[0] = {110, 110, 160, 160}
-		matrix_value[1] = {0, 730, 46, 648}
-		matrix_value[2] = {12100, 545000, 27716, 445504}
-		matrix_value[3] = {1, 1, 1, 1}
-		log.info(matrix_value)
-		log.info(la.transpose(matrix_value))
-		log.info(la.determinant(matrix_value))
-	}
-
-	{
-		matrix_value: matrix[4, 4]i128
-		matrix_value[0] = {110, 0, 12100, 1}
-		matrix_value[1] = {110, 730, 545000, 1}
-		matrix_value[2] = {160, 46, 27716, 1}
-		matrix_value[3] = {160, 684, 445504, 1}
-		log.info(matrix_value)
-		log.info(la.determinant(matrix_value))
-	}
-
-	{
-		matrix_3_3: matrix[3, 3]i128
-		matrix_3_3[0] = {110, 0, 12100}
-		matrix_3_3[1] = {110, 730, 545000}
-		matrix_3_3[2] = {160, 46, 27716}
-		matrix_3_2: matrix[3, 3]i128
-		matrix_3_2[0] = {110, 0, 12100}
-		matrix_3_2[1] = {110, 730, 545000}
-		matrix_3_2[2] = {160, 684, 493456}
-		matrix_3_1: matrix[3, 3]i128
-		matrix_3_1[0] = {110, 0, 12100}
-		matrix_3_1[1] = {160, 46, 27716}
-		matrix_3_1[2] = {160, 684, 493456}
-		matrix_3_0: matrix[3, 3]i128
-		matrix_3_0[0] = {110, 730, 545000}
-		matrix_3_0[1] = {160, 46, 27716}
-		matrix_3_0[2] = {160, 684, 493456}
-
-		d0 := la.determinant(matrix_3_0)
-		d1 := la.determinant(matrix_3_1)
-		d2 := la.determinant(matrix_3_2)
-		d3 := la.determinant(matrix_3_3)
-		log.info(d0, d1, d2, d3)
-		log.info(d0 - d1 + d2 - d3)
-	}
-
-	{
-		log.info(incircle_fast({{110, 0}, {110, 730}, {160, 46}, {160, 684}}))
-	}
-
+mem_test :: proc(_: ^testing.T) {
+	glyfs, _, n := ttf.parse_ttf(
+		"../assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",
+	)
+	load_glyphs(glyfs, n)
 }

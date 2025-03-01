@@ -150,6 +150,16 @@ set_int :: proc(shader_program: u32, name: string, value: i32) {
 	)
 }
 
+set_u32 :: proc(shader_program: u32, name: string, value: u32) {
+	gl.Uniform1ui(
+		gl.GetUniformLocation(
+			shader_program,
+			strings.unsafe_string_to_cstring(name),
+		),
+		value,
+	)
+}
+
 set_f32 :: proc(shader_program: u32, name: string, value: f32) {
 	gl.Uniform1f(
 		gl.GetUniformLocation(
@@ -232,6 +242,7 @@ set_rect :: proc(shader_program: u32, name: string, value: Rect) {
 set_val :: proc {
     set_bool,
 	set_int,
+	set_u32,
 	set_multiple,
 	set_f32,
 	set_vec2,
@@ -266,3 +277,7 @@ set_multiple :: proc(
 		}
 	}
 }
+
+set_font :: proc(
+    
+)

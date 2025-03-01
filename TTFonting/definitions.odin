@@ -12,7 +12,8 @@ Fixed :: bit_field i32be {
 FWord :: i16be
 uFWord :: u16be
 F2Dot14 :: bit_field i16be {
-	whole: i16be | 2,
+    sign: bool | 1, 
+	whole: i16be | 1,
 	frac:  i16be | 14,
 }
 LongDateTime :: i64be
@@ -60,6 +61,8 @@ Table :: union {
 	Maxp,
 	Loca,
 	[]Glyf,
+    // Hmtx, 
+    Hhea,
 }
 
 /*
@@ -179,6 +182,13 @@ Loca :: struct {
 ------------Glyf-----------
  */
 
+GlyfMetrics :: struct {
+    hor_metric: struct {
+        adv_width: u16be,
+        lsb: i16be,
+    }
+}
+
 Glyf :: struct {
 	description: GlyfDescription,
 	value:       union {
@@ -198,6 +208,7 @@ SimpleGlyf :: struct #packed {
 	instructions:        []u8,
 	// flags:               [dynamic]OutlineFlags,
 	coords:              #soa[]Coord,
+    real_indices:        []u16,
 }
 
 Coord :: struct {
@@ -219,6 +230,9 @@ OutlineFlag :: enum u8 {
 
 CompoundGlyf :: struct {
 	components: []ComponentGlyf,
+    coords: #soa[]Coord,
+    end_pts_of_contours: []u16be,
+    real_indices: []u16,
 }
 
 ComponentGlyf :: struct {
@@ -226,14 +240,11 @@ ComponentGlyf :: struct {
 	glyph_idx: u16be,
 	// The transform is interpreted at runtime, it is not a direct parse
 	transform: struct {
-		a, b, c, d, e, f: union {
-			F2Dot14,
-			u16be,
-		},
+		a, b, c, d, e, f: f64,
 	},
 }
 
-ComponentFlags :: bit_set[ComponentFlag;u16]
+ComponentFlags :: bit_set[ComponentFlag;u16be]
 ComponentFlag :: enum u8 {
 	args_are_words = 0,
 	args_are_xy_values,
@@ -246,3 +257,17 @@ ComponentFlag :: enum u8 {
 	use_my_metrics,
 	overlap_compound,
 }
+
+Hhea :: struct {
+    version: Fixed, 
+    ascent, descent, line_gap: FWord,
+    adv_width_max: u16be,
+    min_lsb, min_rsb, x_max_extent: FWord, 
+    caret_slope_rise, caret_slope_run: i16be,
+    caret_offset: FWord, 
+    reserved: [4]i16be,
+    metric_data_fmt: i16be,
+    num_long_hor_metrics: u16be,
+} 
+
+// Hmtx :: struct {}
