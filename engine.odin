@@ -616,7 +616,7 @@ hola putas
 `
 
 	scale := utils.Vec2f{1 / state.window.size.x, 1 / state.window.size.y}
-    scale *= 0.08
+    scale *= 0.08 * f32(selected_vert + 1)
 	// scale: f32 = 0.001
 	// scale *= 0.01 * f32(selected_vert + 1)
 	// log.info(f32(ttf_info.y_max - ttf_info.y_min) * scale)

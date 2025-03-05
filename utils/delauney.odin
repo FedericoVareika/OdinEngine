@@ -31,18 +31,6 @@ MAX_EDGES :: (MAX_VERTICES - 1) * 3
 NIL: EdgePtr : -1
 EPSILON :: #config(EPSILON, 0)
 
-/*
-@(private = "file")
-State :: struct($E: u32, $V: u32) where E < 1000,
-	V < 200 {
-	edges:          [E * 4]EdgePtr,
-	data:           [E]VertPtr,
-	vertices:       [V]Vec2f,
-	next_edge:      EdgePtr,
-	available_edge: EdgePtr,
-}
-*/
-
 @(private = "file")
 State :: struct {
 	edges:                  []EdgePtr,
@@ -50,6 +38,7 @@ State :: struct {
 	next_edge:              EdgePtr,
 	available_edge:         EdgePtr,
 	vertices:               #soa[]Vertex,
+	vert_count:             int,
 	mappings:               []u16,
 	original_mappings:      []u16,
 	removed:                []bool,
@@ -59,6 +48,34 @@ State :: struct {
 // @(private = "file")
 @(private)
 state: State
+
+init_state :: proc(max_verts: u32) {
+	n_edges := max_verts * 3
+	state.vertices = make(#soa[]Vertex, max_verts)
+	state.edges = make([]EdgePtr, n_edges * 4)
+	state.data = make([]EdgePtr, n_edges * 2)
+
+	state.original_mappings = make([]u16, max_verts)
+	state.mappings = state.original_mappings
+	state.origin_to_edge_mapping = make([]EdgePtr, max_verts)
+
+	state.next_edge = 0
+	state.available_edge = NIL
+}
+
+reset_state :: proc() {
+	state.next_edge = 0
+	state.available_edge = NIL
+	state.mappings = state.original_mappings
+}
+
+deinit_state :: proc() {
+	delete(state.vertices)
+	delete(state.edges)
+	delete(state.data)
+	delete(state.original_mappings)
+	delete(state.origin_to_edge_mapping)
+}
 
 @(require_results)
 get_vert_from_ptr :: #force_inline proc(v: VertPtr) -> Vertex {
@@ -421,7 +438,7 @@ collinear :: proc(a, b, c: u16) -> bool {
 }
 
 init_mappings_wo_len :: proc() {
-	for &m, i in state.mappings do m = u16(i)
+	for i in 0 ..< state.vert_count do state.mappings[i] = u16(i)
 }
 
 init_mappings_w_len :: proc(verts: int) {
@@ -469,16 +486,12 @@ quick_sort :: proc(#any_int l, u: int) {
 	quick_sort(pivot + 1, u)
 }
 
-remove_duplicates :: proc(n_verts: int) -> []bool {
+remove_duplicates :: proc() -> []bool {
+	n_verts := state.vert_count
 	to_remove := make([]bool, n_verts)
 	for i := 1; i < n_verts; i += 1 {
 		prev_mapping := state.mappings[i - 1]
 		mapping := state.mappings[i]
-		// log.debug(
-		// 	get_vert(prev_mapping),
-		// 	get_vert(mapping),
-		// 	get_vert(mapping) == get_vert(prev_mapping),
-		// )
 		if get_vert(mapping) == get_vert(prev_mapping) {
 			to_remove[mapping] = true
 		}
@@ -494,21 +507,8 @@ remove_duplicates :: proc(n_verts: int) -> []bool {
 	}
 
 	state.mappings = state.mappings[:n_verts - removed]
-	// log.info("removed", to_remove)
 	return to_remove
 }
-
-// @(test)
-// test_sort :: proc(_: ^testing.T) {
-// 	n_vertices := 5
-// 	state.vertices = make([]Vec2f, n_vertices)
-// 	defer delete_slice(state.vertices)
-// 	state.vertices = {{1, 1}, {0, 1}, {1, 0}, {3, 2}, {2, 1}}
-// 	delete_slice(state.vertices)
-// 	fmt.println(state.vertices)
-// 	quick_sort(0, n_vertices - 1)
-// 	fmt.println(state.vertices)
-// }
 
 delaunay :: proc(set: []u16, offset: i32 = 0) -> (le, re: EdgePtr) {
 	switch len(set) {
@@ -667,6 +667,9 @@ is_constraint_edge :: proc(
 	orig_vert := real_orig(e)
 	dest_vert := real_dest(e)
 
+	if orig_vert >= u16(len(on_curve)) do return false
+	if dest_vert >= u16(len(on_curve)) do return false
+
 	so, eo := get_contour(end_contours, orig_vert)
 	sd, ed := get_contour(end_contours, dest_vert)
 
@@ -704,7 +707,7 @@ append_valid_triangles :: proc(
 ) {
 	first := true
 	start_edge := start_edge
-    running := true
+	running := true
 	for running {
 		log.info("appending at:", real_orig(start_edge), real_dest(start_edge))
 		defer {
@@ -911,74 +914,82 @@ traverse_triangles :: proc(
 				b := u16(new_tri[1])
 				c := u16(new_tri[2])
 
-
-				start_a, end_a := get_contour(end_contours, a)
-				start_b, end_b := get_contour(end_contours, b)
-				start_c, end_c := get_contour(end_contours, c)
-				same_contour := end_a == end_b && end_a == end_c
-				s := start_a
-				e := end_a
-
-				cw_from_a :=
-					get_next_vert(s, e, a) == c && get_next_vert(s, e, c) == b
-				cw_from_b :=
-					get_next_vert(s, e, b) == a && get_next_vert(s, e, a) == c
-				cw_from_c :=
-					get_next_vert(s, e, c) == b && get_next_vert(s, e, b) == a
-				outer_edge := cw_from_a || cw_from_b || cw_from_c // cw orientation 
-
-				ccw_from_a :=
-					get_next_vert(s, e, a) == b && get_next_vert(s, e, b) == c
-				ccw_from_b :=
-					get_next_vert(s, e, b) == c && get_next_vert(s, e, c) == a
-				ccw_from_c :=
-					get_next_vert(s, e, c) == a && get_next_vert(s, e, a) == b
-				inner_edge := ccw_from_a || ccw_from_b || ccw_from_c // ccw orientation 
-
-				vertices_growing :=
-					(a < b && b < c) ||
-					(a < b && a > c) ||
-					(a > b && b < c && a > c) ||
-					(a > b && a > c && a < c)
-				consecutive_verts :=
-					get_next_vert(start_a, end_a, a) == b ||
-					get_next_vert(start_b, end_b, b) == c ||
-					get_next_vert(start_c, end_c, c) == a
-				is_outside := same_contour && vertices_growing
-				filled := on_curve[a] && on_curve[b] && on_curve[c]
-
-				filled ||= !on_curve[a] && !(ccw_from_c || cw_from_b)
-				filled ||= !on_curve[b] && !(ccw_from_a || cw_from_c)
-				filled ||= !on_curve[c] && !(ccw_from_b || cw_from_a)
-
-				should_cut =
-					is_outside && filled ||
-					(consecutive_verts && !(outer_edge || inner_edge))
-
 				when cut == true {
-					if should_cut do continue
-				}
+					start_a, end_a := get_contour(end_contours, a)
+					start_b, end_b := get_contour(end_contours, b)
+					start_c, end_c := get_contour(end_contours, c)
+					same_contour := end_a == end_b && end_a == end_c
+					s := start_a
+					e := end_a
 
+					cw_from_a :=
+						get_next_vert(s, e, a) == c &&
+						get_next_vert(s, e, c) == b
+					cw_from_b :=
+						get_next_vert(s, e, b) == a &&
+						get_next_vert(s, e, a) == c
+					cw_from_c :=
+						get_next_vert(s, e, c) == b &&
+						get_next_vert(s, e, b) == a
+					outer_edge := cw_from_a || cw_from_b || cw_from_c // cw orientation 
 
-				// Uv calculations
-				if !filled && (inner_edge || outer_edge) {
-					off_curve_idx := 0
-					for v, i in new_tri {
-						if !on_curve[v] do off_curve_idx = i
+					ccw_from_a :=
+						get_next_vert(s, e, a) == b &&
+						get_next_vert(s, e, b) == c
+					ccw_from_b :=
+						get_next_vert(s, e, b) == c &&
+						get_next_vert(s, e, c) == a
+					ccw_from_c :=
+						get_next_vert(s, e, c) == a &&
+						get_next_vert(s, e, a) == b
+					inner_edge := ccw_from_a || ccw_from_b || ccw_from_c // ccw orientation 
+
+					vertices_growing :=
+						(a < b && b < c) ||
+						(a < b && a > c) ||
+						(a > b && b < c && a > c) ||
+						(a > b && a > c && a < c)
+					consecutive_verts :=
+						get_next_vert(start_a, end_a, a) == b ||
+						get_next_vert(start_b, end_b, b) == c ||
+						get_next_vert(start_c, end_c, c) == a
+					is_outside := same_contour && vertices_growing
+					filled := on_curve[a] && on_curve[b] && on_curve[c]
+
+					filled ||= !on_curve[a] && !(ccw_from_c || cw_from_b)
+					filled ||= !on_curve[b] && !(ccw_from_a || cw_from_c)
+					filled ||= !on_curve[c] && !(ccw_from_b || cw_from_a)
+
+					should_cut =
+						is_outside && filled ||
+						(consecutive_verts && !(outer_edge || inner_edge))
+
+					when cut == true {
+						if should_cut do continue
 					}
-					after := inner_edge ? off_curve_idx + 1 : off_curve_idx + 2
-					after %%= 3
-					before :=
-						inner_edge ? off_curve_idx + 2 : off_curve_idx + 1
-					before %%= 3
 
-					new_uv[before].uv = {0, 0}
-					new_uv[off_curve_idx].uv = {0.5, 0}
-					new_uv[after].uv = {1, 1}
-					if inner_edge {
-						new_uv[0].z = false
-						new_uv[1].z = false
-						new_uv[2].z = false
+
+					// Uv calculations
+					if !filled && (inner_edge || outer_edge) {
+						off_curve_idx := 0
+						for v, i in new_tri {
+							if !on_curve[v] do off_curve_idx = i
+						}
+						after :=
+							inner_edge ? off_curve_idx + 1 : off_curve_idx + 2
+						after %%= 3
+						before :=
+							inner_edge ? off_curve_idx + 2 : off_curve_idx + 1
+						before %%= 3
+
+						new_uv[before].uv = {0, 0}
+						new_uv[off_curve_idx].uv = {0.5, 0}
+						new_uv[after].uv = {1, 1}
+						if inner_edge {
+							new_uv[0].z = false
+							new_uv[1].z = false
+							new_uv[2].z = false
+						}
 					}
 				}
 			}
@@ -1173,131 +1184,310 @@ apply_constraints :: proc(end_contours: []u16, on_curve: []bool) {
 	}
 }
 
-version :: #config(V, 2)
+append_vertex :: proc(all_verts: ^[dynamic]Vec2f, v: Vertex) {
+	state.vertices[state.vert_count] = v
+	state.vert_count += 1
 
-triangulate_vertices_w_ret :: proc(
-	vertices: #soa[]Vertex,
+	v_f := Vec2f{f32(v.x), f32(v.y)}
+	append(all_verts, v_f)
+}
+
+add_bounding_box :: proc(all_verts: ^[dynamic]Vec2f) {
+	leftmost: i16 = -32768
+	rightmost: i16 = 32767
+	uppermost: i16 = -32768
+	lowermost: i16 = 32767
+
+
+	for i in 0 ..< state.vert_count {
+		v := state.vertices[i]
+		if v.x > leftmost do leftmost = v.x
+		if v.x < rightmost do rightmost = v.x
+		if v.y > uppermost do uppermost = v.y
+		if v.y < lowermost do lowermost = v.y
+	}
+
+	x_size := rightmost - leftmost
+	y_size := uppermost - lowermost
+
+	x_min := leftmost - x_size / 10
+	x_max := rightmost + x_size / 10
+	y_min := lowermost - y_size / 10
+	y_max := uppermost + y_size / 10
+
+	bounding_box := [?]Vertex {
+		Vertex{x_min, y_min},
+		Vertex{x_min, y_max},
+		Vertex{x_max, y_min},
+		Vertex{x_max, y_max},
+	}
+
+	for v, i in bounding_box {
+		append_vertex(all_verts, v)
+	}
+}
+
+edge_flags :: bit_set[edge_flags;u8]
+edge_flag :: enum {
+	visited,
+	add_midpoint,
+}
+
+eval_triangles :: proc(
 	end_contours: []u16,
 	on_curve: []bool,
-) -> (
-	triangles: []Triangle,
-	uvs: []TriangleUV,
+	edges_flags: ^[]edge_flags,
+	start_edge: EdgePtr,
 ) {
-	mappings: []u16
-	{ 	// init state
-		state.vertices = vertices
-		state.mappings = make([]u16, len(vertices))
-		init_mappings()
-
-		n_edges := len(vertices) * len(vertices)
-
-		state.edges = make([]EdgePtr, n_edges * 4)
-		state.data = make([]EdgePtr, n_edges * 2)
-		state.origin_to_edge_mapping = make([]EdgePtr, len(vertices))
-
-		state.next_edge = 0
-		state.available_edge = NIL
-	}
-
-	defer { 	// de-init state
-		delete(state.vertices)
-		delete(mappings)
-		delete(state.edges)
-		delete(state.data)
-		delete(state.origin_to_edge_mapping)
-	}
-
-	{ 	// sort vertices
-		quick_sort(0, len(vertices) - 1)
-
-		when ODIN_DEBUG {
-			log.debug(state.mappings)
-			for m, i in state.mappings {
-				log.debug(
-					"mappings[",
-					i,
-					"]=",
-					m,
-					"vertices[",
-					i,
-					"]=",
-					state.vertices[m],
+	start_edge := start_edge
+	running := true
+	for running {
+		log.info("appending at:", real_orig(start_edge), real_dest(start_edge))
+		defer {
+			start_edge = o_prev(start_edge)
+			if is_constraint_edge(end_contours, on_curve, start_edge) {
+				log.info(
+					"edge is constraint",
+					real_orig(start_edge),
+					real_dest(start_edge),
 				)
-
+				running = false
 			}
 		}
+
+		if .visited in visited_edges[start_edge] do continue
+
+        edge_is_border := [3]bool{}
+
+		triangle_first_edge := start_edge
+
+		new_tri: Triangle
+		prev_vert := real_orig(start_edge)
+		for k in 0 ..< 3 {
+			if first && !on_curve[real_orig(start_edge)] {
+				is_curve = true
+				off_curve_idx = k
+			}
+
+			visited_edges[start_edge] = true
+			new_tri[k] = u32(real_orig(start_edge))
+			start_edge = r_prev(start_edge)
+		}
+		assert(start_edge == triangle_first_edge)
+
+		inner_edge := false
+		if off_curve_idx == 2 do inner_edge = true
+		if off_curve_idx == 0 do is_curve = false
+		if first {
+			a := u16(new_tri[0])
+			b := u16(new_tri[1])
+			c := u16(new_tri[2])
+			a_s, a_e := get_contour(end_contours, a)
+			b_s, b_e := get_contour(end_contours, b)
+			c_s, c_e := get_contour(end_contours, c)
+			consecutive :=
+				!inner_edge &&
+					(get_next_vert(a_s, a_e, a) == b &&
+								get_next_vert(b_s, b_e, b) == c ||
+							get_next_vert(b_s, b_e, b) == c &&
+								get_next_vert(c_s, c_e, c) == a ||
+							get_next_vert(c_s, c_e, c) == a &&
+								get_next_vert(a_s, a_e, a) == b) ||
+				inner_edge &&
+					(get_next_vert(a_s, a_e, a) == c &&
+								get_next_vert(c_s, c_e, c) == b ||
+							get_next_vert(b_s, b_e, b) == a ||
+							get_next_vert(a_s, a_e, a) == c &&
+								get_next_vert(c_s, c_e, c) == b &&
+								get_next_vert(b_s, b_e, b) == a)
+			if !consecutive do is_curve = false
+		}
+
+		if is_curve {
+			after := inner_edge ? off_curve_idx + 1 : off_curve_idx + 2
+			after %%= 3
+			before := inner_edge ? off_curve_idx + 2 : off_curve_idx + 1
+			before %%= 3
+
+			// if get_next_vert(s, e, new_tri[before]) != 
+
+			new_uv[before].uv = {0, 0}
+			new_uv[off_curve_idx].uv = {0.5, 0}
+			new_uv[after].uv = {1, 1}
+			if inner_edge {
+				new_uv[0].z = false
+				new_uv[1].z = false
+				new_uv[2].z = false
+			}
+		}
+
+		// new_uv = {{{0, 1}, true}, {{0, 1}, true}, {{0, 1}, true}}
+
+		append(dest_dyn, new_tri)
+		append(uvs_dyn, new_uv)
+
+		// start_edge = o_prev(start_edge)
 	}
+}
 
-	le, re := delaunay(state.mappings)
+chordal_edge_triangulation :: proc(end_contours: []u16, on_curve: []bool) {
+	edge_flags := make([]edge_flags, state.next_edge, context.temp_allocator)
 
-	apply_constraints(end_contours, on_curve)
+	main_loop: for i := 0; i < int(state.next_edge); i += 2 {
+		e := state.edges[i]
+		if i == int(state.available_edge) {
+			state.available_edge = o_next(state.available_edge)
+			continue
+		}
+		half_edge: for _ in 0 ..< 2 {
+			defer e = sym(e)
+			if .visited in edge_flags[e] do continue
 
-	when ODIN_DEBUG {
-		log.debug("mappings", state.mappings)
-		log.debug("edges", state.edges[:state.next_edge])
-		log.debug("data", state.data[:state.next_edge / 2])
-		log.debug("edge_mapp", state.origin_to_edge_mapping)
-		log.debug("next_avail", state.available_edge)
+			current_edge := e
+			new_tri: Triangle
+			// new_uv: TriangleUV = {{0, 1, 1}, {0, 1, 1}, {0, 1, 1}}
+			new_uv: TriangleUV = {
+				{{0, 1}, true},
+				{{0, 1}, true},
+				{{0, 1}, true},
+			}
+
+			triangle: for tri_idx in 0 ..< 3 {
+				defer current_edge = l_next(current_edge)
+				visited_edges[current_edge] = true
+
+				current_origin := real_orig(current_edge)
+				current_dest := real_dest(current_edge)
+
+				new_tri[tri_idx] = u32(current_origin)
+			}
+
+			if e != current_edge do continue
+
+			should_cut: bool
+			{ 	// Mastermined by me, can you tell? 
+				a := u16(new_tri[0])
+				b := u16(new_tri[1])
+				c := u16(new_tri[2])
+
+				when cut == true {
+					start_a, end_a := get_contour(end_contours, a)
+					start_b, end_b := get_contour(end_contours, b)
+					start_c, end_c := get_contour(end_contours, c)
+					same_contour := end_a == end_b && end_a == end_c
+					s := start_a
+					e := end_a
+
+					cw_from_a :=
+						get_next_vert(s, e, a) == c &&
+						get_next_vert(s, e, c) == b
+					cw_from_b :=
+						get_next_vert(s, e, b) == a &&
+						get_next_vert(s, e, a) == c
+					cw_from_c :=
+						get_next_vert(s, e, c) == b &&
+						get_next_vert(s, e, b) == a
+					outer_edge := cw_from_a || cw_from_b || cw_from_c // cw orientation 
+
+					ccw_from_a :=
+						get_next_vert(s, e, a) == b &&
+						get_next_vert(s, e, b) == c
+					ccw_from_b :=
+						get_next_vert(s, e, b) == c &&
+						get_next_vert(s, e, c) == a
+					ccw_from_c :=
+						get_next_vert(s, e, c) == a &&
+						get_next_vert(s, e, a) == b
+					inner_edge := ccw_from_a || ccw_from_b || ccw_from_c // ccw orientation 
+
+					vertices_growing :=
+						(a < b && b < c) ||
+						(a < b && a > c) ||
+						(a > b && b < c && a > c) ||
+						(a > b && a > c && a < c)
+					consecutive_verts :=
+						get_next_vert(start_a, end_a, a) == b ||
+						get_next_vert(start_b, end_b, b) == c ||
+						get_next_vert(start_c, end_c, c) == a
+					is_outside := same_contour && vertices_growing
+					filled := on_curve[a] && on_curve[b] && on_curve[c]
+
+					filled ||= !on_curve[a] && !(ccw_from_c || cw_from_b)
+					filled ||= !on_curve[b] && !(ccw_from_a || cw_from_c)
+					filled ||= !on_curve[c] && !(ccw_from_b || cw_from_a)
+
+					should_cut =
+						is_outside && filled ||
+						(consecutive_verts && !(outer_edge || inner_edge))
+
+					when cut == true {
+						if should_cut do continue
+					}
+
+
+					// Uv calculations
+					if !filled && (inner_edge || outer_edge) {
+						off_curve_idx := 0
+						for v, i in new_tri {
+							if !on_curve[v] do off_curve_idx = i
+						}
+						after :=
+							inner_edge ? off_curve_idx + 1 : off_curve_idx + 2
+						after %%= 3
+						before :=
+							inner_edge ? off_curve_idx + 2 : off_curve_idx + 1
+						before %%= 3
+
+						new_uv[before].uv = {0, 0}
+						new_uv[off_curve_idx].uv = {0.5, 0}
+						new_uv[after].uv = {1, 1}
+						if inner_edge {
+							new_uv[0].z = false
+							new_uv[1].z = false
+							new_uv[2].z = false
+						}
+					}
+				}
+			}
+
+			new_uv = {{{0, 1}, true}, {{0, 1}, true}, {{0, 1}, true}}
+
+			log.debug(new_tri)
+			append(dest_dyn, new_tri)
+			append(uvs_dyn, new_uv)
+		}
 	}
-
-	triangles_dyn := make([dynamic]Triangle)
-	uvs_dyn := make([dynamic]TriangleUV)
-	when version == 1 {
-		traverse_triangles(&triangles_dyn, &uvs_dyn, end_contours, on_curve)
-	} else when version == 2 {
-		traverse_triangles_2(&triangles_dyn, &uvs_dyn, end_contours, on_curve)
-	}
-	resize_dynamic_array(&triangles_dyn, len(triangles_dyn))
-	resize_dynamic_array(&uvs_dyn, len(triangles_dyn))
-
-	return triangles_dyn[:], uvs_dyn[:]
 }
 
-init_state :: proc(max_verts: u32) {
-	n_edges := max_verts * 3
-	state.edges = make([]EdgePtr, n_edges * 4)
-	state.data = make([]EdgePtr, n_edges * 2)
+version :: #config(V, 2)
 
-	state.original_mappings = make([]u16, max_verts)
-	state.mappings = state.original_mappings
-	state.origin_to_edge_mapping = make([]EdgePtr, max_verts)
-
-	state.next_edge = 0
-	state.available_edge = NIL
-}
-
-reset_state :: proc() {
-	state.next_edge = 0
-	state.available_edge = NIL
-	state.mappings = state.original_mappings
-}
-
-deinit_state :: proc() {
-	delete(state.edges)
-	delete(state.data)
-	delete(state.original_mappings)
-	delete(state.origin_to_edge_mapping)
-}
-
-// import ttf "../TTFonting"
 triangulate_vertices_w_inout :: proc(
 	vertices: #soa[]Vertex,
 	end_contours: []u16,
 	on_curve: []bool,
+	all_verts: ^[dynamic]Vec2f,
 	triangles: ^[dynamic]Triangle,
 	uvs: ^[dynamic]TriangleUV,
 ) {
-	if len(vertices) == 0 do return
+	state.vert_count = len(vertices)
+	if state.vert_count == 0 do return
 
 	{ 	// init state
-		state.vertices = vertices
-		init_mappings(len(vertices))
+		n := 0
+		for v, i in vertices {
+			state.vertices[i] = v
+			n += 1
+		}
+		assert(n == state.vert_count)
+
+		add_bounding_box(all_verts)
+
+		init_mappings()
 	}
 
 	{ 	// sort vertices
-		quick_sort(0, len(vertices) - 1)
-		// TODO: remove from also vertices and end_pts i think
-		state.removed = remove_duplicates(len(vertices))
+		quick_sort(0, state.vert_count - 1)
+		state.removed = remove_duplicates()
 	}
 	defer delete(state.removed)
 
@@ -1322,7 +1512,6 @@ triangulate_vertices_w_inout :: proc(
 }
 
 triangulate_vertices :: proc {
-	triangulate_vertices_w_ret,
 	triangulate_vertices_w_inout,
 }
 

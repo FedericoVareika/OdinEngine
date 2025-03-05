@@ -25,7 +25,10 @@ load_glyphs :: proc(
 	glyf_sbos: GlyfSBOs,
 	glyf_info: [128]GlyfInfo,
 ) {
-	max_verts := ttf_info.max_verts
+	max_verts := ttf_info.max_verts +   // contour vertices
+        (ttf_info.max_verts / 2) +      // chordial axis vertices
+        4                               // bounding box vertices
+
 	all_vertices := make([dynamic]Vec2f, len = 0, cap = max_verts * 128)
 	all_triangles := make([dynamic]Triangle, len = 0, cap = max_verts * 128)
 	all_uvs := make([dynamic]TriangleUV, len = 0, cap = max_verts * 128)
@@ -41,35 +44,35 @@ load_glyphs :: proc(
 	init_state(max_verts)
 	defer deinit_state()
 
-    bounding_rect: Rect = {
-        pos  = {f32(ttf_info.x_min), f32(ttf_info.y_min)},
-        size = {
-            f32(ttf_info.x_max - ttf_info.x_min),
-            f32(ttf_info.y_max - ttf_info.y_min),
-        },
-    }
+	bounding_rect: Rect = {
+		pos  = {f32(ttf_info.x_min), f32(ttf_info.y_min)},
+		size = {
+			f32(ttf_info.x_max - ttf_info.x_min),
+			f32(ttf_info.y_max - ttf_info.y_min),
+		},
+	}
 
-    log.info(glyfs['\"'])
+	log.info(glyfs['\"'])
 
 	glyf_loop: for _, idx in glyfs {
-        log.info("at", idx)
+		log.info("at", idx)
 		defer reset_state()
 		// if idx == 81 do continue
 		glyf := glyfs[idx]
 		glyf_info[idx].vertex_offset = u32(len(all_vertices))
 		glyf_info[idx].triangle_offset = u32(len(all_triangles))
-        // log.info(glyf)
+		// log.info(glyf)
 
-        coords: #soa[]ttf.Coord
-        end_contours_be: []u16be
+		coords: #soa[]ttf.Coord
+		end_contours_be: []u16be
 
 		switch v in glyf.value {
 		case ttf.CompoundGlyf:
-            end_contours_be = v.end_pts_of_contours
-            coords = v.coords
+			end_contours_be = v.end_pts_of_contours
+			coords = v.coords
 		case ttf.SimpleGlyf:
-            end_contours_be = v.end_pts_of_contours
-            coords = v.coords
+			end_contours_be = v.end_pts_of_contours
+			coords = v.coords
 		}
 
 		end_contours: []u16
@@ -87,27 +90,30 @@ load_glyphs :: proc(
 		}
 
 		{
-            // if idx == 34 {
-            //     log.info(coords)
-            //     log.info(end_contours)
-            // }
 			x, y, on_curve := soa_unzip(coords)
-            context.logger.lowest_level = idx == 0 ? .Debug : .Warning 
+			context.logger.lowest_level = idx == 0 ? .Debug : .Warning
 			triangulate_vertices(
 				soa_zip(x = x, y = y),
 				end_contours,
 				on_curve,
+                &all_vertices,
 				&all_triangles,
 				&all_uvs,
 			)
-            context.logger.lowest_level = .Debug
+			context.logger.lowest_level = .Debug
+
+            // for v in added_vertices {
+            //     // v: Vec2f = {f32(coord.x), f32(coord.y)}
+            //     append(&all_vertices, v)
+            // }
 		}
+
 
 		glyf_info[idx].triangle_count =
 			u32(len(all_triangles)) - glyf_info[idx].triangle_offset
 	}
 
-    /*
+	/*
     log.info(ttf_info)
 	char := 'H'
 	for tri in all_triangles[glyf_info[char].triangle_offset:][:glyf_info[char].triangle_count] {
