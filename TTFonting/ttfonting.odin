@@ -425,6 +425,7 @@ parse_glyf :: proc(glyf_data: []u8) -> (glyf: Glyf) {
 
 	if (glyf.description.n_contours < 0) {
 		glyf.value = parse_compound_glyf(glyf_data, glyf.description)
+        log.warn(glyf.value)
 		// glyf.value = CompoundGlyf({})
 	} else if (glyf.description.n_contours > 0) {
 		glyf.value = parse_simple_glyf(glyf_data, glyf.description)
@@ -469,13 +470,15 @@ parse_simple_glyf :: proc(
 	)
 	total_bytes += bytes
 
-	simple_glyf.instructions, bytes = slice_from_data_offset(
-		&simple_glyf_data,
-		0,
-		int(simple_glyf.instruction_len),
-		u8,
-	)
-	total_bytes += bytes
+    simple_glyf_data = simple_glyf_data[int(simple_glyf.instruction_len):]
+	// simple_glyf.instructions, bytes = slice_from_data_offset(
+	// 	&simple_glyf_data,
+	// 	0,
+	// 	int(simple_glyf.instruction_len),
+	// 	u8,
+	// )
+
+	total_bytes += int(simple_glyf.instruction_len)
 	// copy_slice(simple_glyf.instructions, simple_glyf.instructions)
 
 	n_points := int(
@@ -821,8 +824,8 @@ parse_component :: proc(
         append(real_indices, index + last_real_index^)
     } 
 
-    last_end_pt^ = end_pts[len(end_pts) - 1] 
-    last_real_index^ = real_indices[len(real_indices) - 1]
+    last_end_pt^ = end_pts[len(end_pts) - 1] + 1
+    last_real_index^ = real_indices[len(real_indices) - 1] + 1
 
     return glyf_data
 }

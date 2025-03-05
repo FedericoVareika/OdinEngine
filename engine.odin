@@ -202,15 +202,14 @@ main :: proc() {
 
 	{
 		glyfs, metrics, info := ttf.parse_ttf(
-			"assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",
+			// "assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",
+			"assets/fonts/JetBrains/JetBrainsMono-Light.ttf",
+			// "assets/fonts/IosevkaTermNerdFontMono-Light.ttf",
+			// "assets/fonts/IosevkaCustom-Light.ttf",
 		)
 		ttf_info = info
 		glyf_metrics = metrics
-		log.info(glyf_metrics)
 		glyf_sbos, glyf_info = utils.load_glyphs(glyfs, ttf_info)
-		for info, idx in glyf_info {
-			log.info("[", idx, "]", info)
-		}
 	}
 
 	{
@@ -607,22 +606,34 @@ render_glyf :: proc() {
 	font := state.graphics.shaders["font"]
 	gl.UseProgram(font)
 
-	hello := "\"Avril\""
-	// hello := "Q"
+	hello := `
+abcdefghijklmnopqrstuvwxyz
+ABCDEFGHIJKLMNOPQRSTUVWXYZ
+123456789
+!@#$%^&*_=-
+{[(<>)]}+?'":|,~\
+hola putas
+`
 
 	scale := utils.Vec2f{1 / state.window.size.x, 1 / state.window.size.y}
-    scale *= 0.2
+    scale *= 0.08
 	// scale: f32 = 0.001
 	// scale *= 0.01 * f32(selected_vert + 1)
 	// log.info(f32(ttf_info.y_max - ttf_info.y_min) * scale)
 	// scale *= (f32(math.sin(glfw.GetTime())) + 1) / f32(selected_vert)
 	utils.set_val(font, "scale", scale)
 	utils.set_val(font, "color", utils.Vec3f{0, 0, 0})
+	utils.set_val(font, "selected_vert", i32(selected_vert))
 
 	translation_before_scaling := utils.Vec2f{}
-	translation_after_scaling := utils.Vec2f{-1, -0.5}
+	translation_after_scaling := utils.Vec2f{-1, 0.5}
 
 	for char in hello {
+        if char == '\n' {
+            translation_before_scaling.x = 0
+            translation_before_scaling.y -= 1100
+            continue
+        }
 		this_glyf_info := glyf_info[char %% 128]
 		this_glyf_metrics := glyf_metrics[char %% 128]
 		translation_before_scaling.x += f32(
@@ -647,7 +658,6 @@ render_glyf :: proc() {
 		)
 		gl.DrawArrays(gl.TRIANGLES, 0, i32(this_glyf_info.triangle_count) * 3)
 		// gl.DrawArrays(gl.POINTS, 0, i32(this_glyf_info.triangle_count) * 3)
-
 	}
 
 }

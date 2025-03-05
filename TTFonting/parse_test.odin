@@ -10,7 +10,9 @@ main_test :: proc(_: ^testing.T) {
 	// parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf", 26) // B
 	// parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf", 27) // C
 
-	glyfs, _, _ := parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf")
+	// glyfs, _, _ := parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf")
+	glyfs, _, _ := parse_ttf("../assets/fonts/IosevkaTermNerdFontMono-Light.ttf")
+
 	// glyfs := parse_ttf("../assets/fonts/JetBrainsMono-Thin.ttf", 'U')
 	// log.info(len(glyfs['9'].value.(SimpleGlyf).coords))
 	// log.info(glyfs['9'].value.(SimpleGlyf).coords)

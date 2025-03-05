@@ -58,6 +58,7 @@ load_glyphs :: proc(
 		glyf := glyfs[idx]
 		glyf_info[idx].vertex_offset = u32(len(all_vertices))
 		glyf_info[idx].triangle_offset = u32(len(all_triangles))
+        // log.info(glyf)
 
         coords: #soa[]ttf.Coord
         end_contours_be: []u16be
@@ -86,11 +87,12 @@ load_glyphs :: proc(
 		}
 
 		{
-            if idx == 34 {
-                log.info(coords)
-                log.info(end_contours)
-            }
+            // if idx == 34 {
+            //     log.info(coords)
+            //     log.info(end_contours)
+            // }
 			x, y, on_curve := soa_unzip(coords)
+            context.logger.lowest_level = idx == 0 ? .Debug : .Warning 
 			triangulate_vertices(
 				soa_zip(x = x, y = y),
 				end_contours,
@@ -98,12 +100,14 @@ load_glyphs :: proc(
 				&all_triangles,
 				&all_uvs,
 			)
+            context.logger.lowest_level = .Debug
 		}
 
 		glyf_info[idx].triangle_count =
 			u32(len(all_triangles)) - glyf_info[idx].triangle_offset
 	}
 
+    /*
     log.info(ttf_info)
 	char := 'H'
 	for tri in all_triangles[glyf_info[char].triangle_offset:][:glyf_info[char].triangle_count] {
@@ -114,6 +118,7 @@ load_glyphs :: proc(
 		log.info("}")
 
 	}
+    */
 
 	{
 		SBOs: [3]u32

@@ -51,6 +51,8 @@ State :: struct {
 	available_edge:         EdgePtr,
 	vertices:               #soa[]Vertex,
 	mappings:               []u16,
+	original_mappings:      []u16,
+	removed:                []bool,
 	origin_to_edge_mapping: []EdgePtr,
 }
 
@@ -467,6 +469,35 @@ quick_sort :: proc(#any_int l, u: int) {
 	quick_sort(pivot + 1, u)
 }
 
+remove_duplicates :: proc(n_verts: int) -> []bool {
+	to_remove := make([]bool, n_verts)
+	for i := 1; i < n_verts; i += 1 {
+		prev_mapping := state.mappings[i - 1]
+		mapping := state.mappings[i]
+		// log.debug(
+		// 	get_vert(prev_mapping),
+		// 	get_vert(mapping),
+		// 	get_vert(mapping) == get_vert(prev_mapping),
+		// )
+		if get_vert(mapping) == get_vert(prev_mapping) {
+			to_remove[mapping] = true
+		}
+	}
+
+	removed := 0
+	for i := 0; i < n_verts; i += 1 {
+		if to_remove[state.mappings[i]] {
+			removed += 1
+			continue
+		}
+		state.mappings[i - removed] = state.mappings[i]
+	}
+
+	state.mappings = state.mappings[:n_verts - removed]
+	// log.info("removed", to_remove)
+	return to_remove
+}
+
 // @(test)
 // test_sort :: proc(_: ^testing.T) {
 // 	n_vertices := 5
@@ -636,10 +667,17 @@ is_constraint_edge :: proc(
 	orig_vert := real_orig(e)
 	dest_vert := real_dest(e)
 
-	s, e := get_contour(end_contours, orig_vert)
+	so, eo := get_contour(end_contours, orig_vert)
+	sd, ed := get_contour(end_contours, dest_vert)
+
+	if so != sd do return false
+
+	s := so
+	e := eo
 
 	next_orig_vert := get_next_vert(s, e, orig_vert)
 	next_dest_vert := get_next_vert(s, e, dest_vert)
+	// log.info("checking constraint:", orig_vert, dest_vert, s, e, next_orig_vert, next_dest_vert)
 	if dest_vert == next_orig_vert do return true
 	if orig_vert == next_dest_vert do return true
 
@@ -666,8 +704,24 @@ append_valid_triangles :: proc(
 ) {
 	first := true
 	start_edge := start_edge
-	for {
+    running := true
+	for running {
+		log.info("appending at:", real_orig(start_edge), real_dest(start_edge))
+		defer {
+			start_edge = o_prev(start_edge)
+			if is_constraint_edge(end_contours, on_curve, start_edge) {
+				log.info(
+					"edge is constraint",
+					real_orig(start_edge),
+					real_dest(start_edge),
+				)
+				running = false
+			}
+		}
 		defer first = false
+
+		if visited_edges[start_edge] do continue
+
 		triangle_constraint_edge := start_edge
 
 		is_curve := false
@@ -740,10 +794,7 @@ append_valid_triangles :: proc(
 		append(dest_dyn, new_tri)
 		append(uvs_dyn, new_uv)
 
-		start_edge = o_prev(start_edge)
-		if is_constraint_edge(end_contours, on_curve, start_edge) {
-			break
-		}
+		// start_edge = o_prev(start_edge)
 	}
 }
 
@@ -771,13 +822,36 @@ traverse_triangles_2 :: proc(
 		defer c_start = c_end + 1
 		// log.info(c_start, c_end)
 		for i := c_start; i <= c_end; i += 1 {
+			if state.removed[i] do continue
 			next_vert := get_next_vert(c_start, c_end, i)
+			for state.removed[next_vert] {
+				next_vert = get_next_vert(c_start, c_end, next_vert)
+			}
 			constraint_edge := get_edge(i, next_vert)
 			assert(constraint_edge < state.next_edge)
 
 			// Append valid trianges 
 			// (the ones to the right of the constraint edge)
-			if !visited_edges[constraint_edge] {
+			// if !visited_edges[constraint_edge] {
+			append_valid_triangles(
+				dest_dyn,
+				uvs_dyn,
+				end_contours,
+				on_curve,
+				&visited_edges,
+				constraint_edge,
+			)
+			// }
+
+			if on_curve[next_vert] do continue
+
+			next_next_vert := get_next_vert(c_start, c_end, next_vert)
+			for state.removed[next_next_vert] {
+				next_next_vert = get_next_vert(c_start, c_end, next_next_vert)
+			}
+			if !collinear(i, next_vert, next_next_vert) {
+				constraint_edge = get_edge(i, next_next_vert)
+				// if !visited_edges[constraint_edge] {
 				append_valid_triangles(
 					dest_dyn,
 					uvs_dyn,
@@ -786,22 +860,7 @@ traverse_triangles_2 :: proc(
 					&visited_edges,
 					constraint_edge,
 				)
-			}
-
-			next_next_vert := get_next_vert(c_start, c_end, next_vert)
-			if !on_curve[next_vert] &&
-			   !collinear(i, next_vert, next_next_vert) {
-				constraint_edge = get_edge(i, next_next_vert)
-				if !visited_edges[constraint_edge] {
-					append_valid_triangles(
-						dest_dyn,
-						uvs_dyn,
-						end_contours,
-						on_curve,
-						&visited_edges,
-						constraint_edge,
-					)
-				}
+				// }
 			}
 		}
 	}
@@ -926,6 +985,7 @@ traverse_triangles :: proc(
 
 			new_uv = {{{0, 1}, true}, {{0, 1}, true}, {{0, 1}, true}}
 
+			log.debug(new_tri)
 			append(dest_dyn, new_tri)
 			append(uvs_dyn, new_uv)
 		}
@@ -1000,6 +1060,16 @@ apply_constraint :: proc(a, b: u16) {
 	}
 
 	aux := l_next(a_edge)
+
+	{
+		second := aux
+		for _ in 0 ..= 3 {
+			log.debug("lnext = ", real_orig(second), real_dest(second))
+			second = l_next(second)
+		}
+	}
+
+	log.debug("aux", real_orig(aux), real_dest(aux))
 	intersecting_queue := make([dynamic]EdgePtr, context.temp_allocator)
 
 	j := 0
@@ -1008,9 +1078,20 @@ apply_constraint :: proc(a, b: u16) {
 		defer j += 1
 		if j > 100 do break
 
+		log.info(real_orig(aux), real_dest(aux))
+
 		aux_orig := get_vert(orig(aux)^)
 		aux_dest := get_vert(dest(aux)^)
 		k := 0
+		log.info(
+			"intersects(",
+			a_vert,
+			b_vert,
+			aux_orig,
+			aux_dest,
+			"):",
+			intersects(a_vert, b_vert, aux_orig, aux_dest),
+		)
 		for !intersects(a_vert, b_vert, aux_orig, aux_dest) {
 			defer k += 1
 			if dest(aux)^ == b_vert_ptr do break main_loop
@@ -1033,15 +1114,32 @@ apply_constraint :: proc(a, b: u16) {
 	i := 0
 	for len(intersecting_queue) != 0 {
 		e := intersecting_queue[i]
+		prev_orig := real_orig(e)
+		prev_dest := real_dest(e)
 		swap(e)
 		e_origin := get_vert(orig(e)^)
 		e_dest := get_vert(dest(e)^)
 
+
 		if (orig(e)^ == a_vert_ptr && dest(e)^ == b_vert_ptr) ||
 		   (orig(e)^ == b_vert_ptr && dest(e)^ == a_vert_ptr) ||
 		   !intersects(a_vert, b_vert, e_origin, e_dest) {
-			unordered_remove(&intersecting_queue, i)
-			i -= 1
+			if collinear(real_orig(e), real_dest(e), prev_orig) ||
+			   collinear(real_orig(e), real_dest(e), prev_dest) {
+				when ODIN_DEBUG {
+					log.info(
+						"edge is collinear, do not remove: ",
+						real_orig(e),
+						real_dest(e),
+					)
+				}
+			} else {
+				when ODIN_DEBUG {
+					log.info("removing: ", real_orig(e), real_dest(e))
+				}
+				unordered_remove(&intersecting_queue, i)
+				i -= 1
+			}
 		}
 		if len(intersecting_queue) == 0 do break
 		i = (i + 1) %% len(intersecting_queue)
@@ -1055,9 +1153,18 @@ apply_constraints :: proc(end_contours: []u16, on_curve: []bool) {
 	for c_end in end_contours {
 		defer c_start = c_end + 1
 		for i := c_start; i <= c_end; i += 1 {
+			if state.removed[i] do continue
+
 			next_vert := get_next_vert(c_start, c_end, i)
+			for state.removed[next_vert] {
+				next_vert = get_next_vert(c_start, c_end, next_vert)
+			}
+
 			apply_constraint(i, next_vert)
 			next_next_vert := get_next_vert(c_start, c_end, next_vert)
+			for state.removed[next_next_vert] {
+				next_next_vert = get_next_vert(c_start, c_end, next_next_vert)
+			}
 			if !on_curve[next_vert] &&
 			   !collinear(i, next_vert, next_next_vert) {
 				apply_constraint(i, next_next_vert)
@@ -1076,6 +1183,7 @@ triangulate_vertices_w_ret :: proc(
 	triangles: []Triangle,
 	uvs: []TriangleUV,
 ) {
+	mappings: []u16
 	{ 	// init state
 		state.vertices = vertices
 		state.mappings = make([]u16, len(vertices))
@@ -1093,7 +1201,7 @@ triangulate_vertices_w_ret :: proc(
 
 	defer { 	// de-init state
 		delete(state.vertices)
-		delete(state.mappings)
+		delete(mappings)
 		delete(state.edges)
 		delete(state.data)
 		delete(state.origin_to_edge_mapping)
@@ -1150,7 +1258,8 @@ init_state :: proc(max_verts: u32) {
 	state.edges = make([]EdgePtr, n_edges * 4)
 	state.data = make([]EdgePtr, n_edges * 2)
 
-	state.mappings = make([]u16, max_verts)
+	state.original_mappings = make([]u16, max_verts)
+	state.mappings = state.original_mappings
 	state.origin_to_edge_mapping = make([]EdgePtr, max_verts)
 
 	state.next_edge = 0
@@ -1160,12 +1269,13 @@ init_state :: proc(max_verts: u32) {
 reset_state :: proc() {
 	state.next_edge = 0
 	state.available_edge = NIL
+	state.mappings = state.original_mappings
 }
 
 deinit_state :: proc() {
 	delete(state.edges)
 	delete(state.data)
-	delete(state.mappings)
+	delete(state.original_mappings)
 	delete(state.origin_to_edge_mapping)
 }
 
@@ -1186,26 +1296,12 @@ triangulate_vertices_w_inout :: proc(
 
 	{ 	// sort vertices
 		quick_sort(0, len(vertices) - 1)
-
-		// when ODIN_DEBUG {
-		// 	log.debug(state.mappings)
-		// 	for m, i in state.mappings {
-		// 		log.debug(
-		// 			"mappings[",
-		// 			i,
-		// 			"]=",
-		// 			m,
-		// 			"vertices[",
-		// 			i,
-		// 			"]=",
-		// 			state.vertices[m],
-		// 		)
-
-		// 	}
-		// }
+		// TODO: remove from also vertices and end_pts i think
+		state.removed = remove_duplicates(len(vertices))
 	}
+	defer delete(state.removed)
 
-	le, re := delaunay(state.mappings[:len(vertices)])
+	le, re := delaunay(state.mappings)
 
 	apply_constraints(end_contours, on_curve)
 
@@ -1215,6 +1311,7 @@ triangulate_vertices_w_inout :: proc(
 		log.debug("data", state.data[:state.next_edge / 2])
 		log.debug("edge_mapp", state.origin_to_edge_mapping)
 		log.debug("next_avail", state.available_edge)
+		log.debug("end_contours", end_contours)
 	}
 
 	when version == 1 {

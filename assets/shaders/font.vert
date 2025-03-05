@@ -55,7 +55,7 @@ void main() {
 
     gl_Position = vec4(vertex, -0.2, 1);
     gl_PointSize = 3;
-    if (selected_vert == index) {
+    if (selected_vert == indices[offset_idx]) {
         gl_PointSize = 8;
     }
 }
