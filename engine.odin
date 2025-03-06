@@ -614,6 +614,7 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ
 {[(<>)]}+?'":|,~\
 hola putas
 `
+    // hello = "abcdefghijklmnop"
 
 	scale := utils.Vec2f{1 / state.window.size.x, 1 / state.window.size.y}
     scale *= 0.08 * f32(selected_vert + 1)

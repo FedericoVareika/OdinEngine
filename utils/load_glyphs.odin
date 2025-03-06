@@ -26,7 +26,7 @@ load_glyphs :: proc(
 	glyf_info: [128]GlyfInfo,
 ) {
 	max_verts := ttf_info.max_verts +   // contour vertices
-        (ttf_info.max_verts / 2) +      // chordial axis vertices
+        5 * ttf_info.max_verts +        // chordial axis vertices
         4                               // bounding box vertices
 
 	all_vertices := make([dynamic]Vec2f, len = 0, cap = max_verts * 128)
