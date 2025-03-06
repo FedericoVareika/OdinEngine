@@ -627,7 +627,7 @@ hola putas
 	utils.set_val(font, "selected_vert", i32(selected_vert))
 
 	translation_before_scaling := utils.Vec2f{}
-	translation_after_scaling := utils.Vec2f{-1, 0.5}
+	translation_after_scaling := utils.Vec2f{-1 - f32(selected_vert) * 0, 0.5}
 
 	for char in hello {
         if char == '\n' {

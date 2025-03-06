@@ -14,17 +14,19 @@ float linearstep(float edge0, float edge1, float x) {
 
 void main() {
     // uv.z is 1 if outer curve, or -1 if inner curve
-    float smoothing_amount = 50;
-    float dist = inner * (uv.x * uv.x - uv.y);
+    float smoothing_amount = 1.5;
+    float dist = (uv.x * uv.x - uv.y);
     float pixel_size = length(vec2(dFdx(dist), dFdy(dist)));
-    float alpha = (1.0 - dist) / (pixel_size * smoothing_amount);
+    dist *= inner;
+    dist -= pixel_size * 0.5;
+    float alpha = (-dist) / (pixel_size * smoothing_amount);
     // float alpha = (1.0 - dist); 
 
     // vec2 gradient = vec2(2 * uv.x, -1);
     // float distance = f / length(gradient);
 
-    // float alpha = smoothstep(-1, 1, -distance);
+    // alpha = step(0, -dist);
 
-    frag_color = vec4(color, alpha);
+    frag_color = vec4(vec3(color.x * inner, color.y, -color.z * inner), alpha);
     // frag_color = vec4(color, 1);
 }

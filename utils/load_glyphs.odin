@@ -91,7 +91,7 @@ load_glyphs :: proc(
 
 		{
 			x, y, on_curve := soa_unzip(coords)
-			context.logger.lowest_level = idx == 0 ? .Debug : .Warning
+			context.logger.lowest_level = idx == 'a' ? .Debug : .Warning
 			triangulate_vertices(
 				soa_zip(x = x, y = y),
 				end_contours,
