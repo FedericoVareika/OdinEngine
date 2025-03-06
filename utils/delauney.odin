@@ -43,6 +43,8 @@ State :: struct {
 	original_mappings:      []u16,
 	removed:                []bool,
 	origin_to_edge_mapping: []EdgePtr,
+	on_curve:               []bool,
+	end_contours:           []u16,
 }
 
 // @(private = "file")
@@ -659,11 +661,12 @@ get_next_vert :: proc {
 	get_next_vert_wi_contour,
 }
 
-is_constraint_edge :: proc(
-	end_contours: []u16,
+is_constraint_edge_w_params :: proc(
 	on_curve: []bool,
+	end_contours: []u16,
 	e: EdgePtr,
 ) -> bool {
+
 	orig_vert := real_orig(e)
 	dest_vert := real_dest(e)
 
@@ -698,6 +701,16 @@ is_constraint_edge :: proc(
 }
 
 @(require_results)
+is_constraint_edge_wo_params :: proc(e: EdgePtr) -> bool {
+	return is_constraint_edge(state.on_curve, state.end_contours, e)
+}
+
+is_constraint_edge :: proc {
+	is_constraint_edge_w_params,
+	is_constraint_edge_wo_params,
+}
+
+@(require_results)
 is_bound_edge :: proc(on_curve: []bool, e: EdgePtr) -> bool {
 	orig_vert := real_orig(e)
 	dest_vert := real_dest(e)
@@ -723,7 +736,7 @@ append_valid_triangles :: proc(
 		log.info("appending at:", real_orig(start_edge), real_dest(start_edge))
 		defer {
 			start_edge = o_prev(start_edge)
-			if is_constraint_edge(end_contours, on_curve, start_edge) {
+			if is_constraint_edge(on_curve, end_contours, start_edge) {
 				log.info(
 					"edge is constraint",
 					real_orig(start_edge),
@@ -1252,17 +1265,17 @@ TriangleType :: enum {
 	junction_o,
 	terminal,
 	hole,
-    bounding, 
+	bounding,
 	curve,
 }
 
 triangle_type :: proc(
 	tri: Triangle,
 	n_constraints: int,
-    has_bound_edge: bool,
-    is_curve: bool,
+	has_bound_edge: bool,
+	is_curve: bool,
 ) -> TriangleType {
-    if has_bound_edge do return .bounding
+	if has_bound_edge do return .bounding
 	switch n_constraints {
 	case 0:
 		a := transmute([2]u16)get_vert(u16(tri[0]))
@@ -1279,7 +1292,7 @@ triangle_type :: proc(
 	case 2:
 		return .terminal
 	case:
-        if is_curve do return .curve
+		if is_curve do return .curve
 		return .hole
 	}
 }
@@ -1288,15 +1301,16 @@ append_subtriangles :: proc(
 	all_verts: ^[dynamic]Vec2f,
 	dest_dyn: ^[dynamic]Triangle,
 	uvs_dyn: ^[dynamic]TriangleUV,
-    on_curve: []bool,
-    end_contours: []u16,
 	triangle: Triangle,
-    type: TriangleType,
+	type: TriangleType,
 	constraint_edges: []int,
 	midpoint_indices: []u16,
 ) {
+	end_contours := state.end_contours
+	on_curve := state.on_curve
 
 	full_uv := TriangleUV{{{0, 1}, true}, {{0, 1}, true}, {{0, 1}, true}}
+    edge_uv := TriangleUV{{{0, 0}, true}, {{0, 0}, true}, {{1, 0}, true}}
 
 	switch type {
 	case .terminal:
@@ -1308,10 +1322,10 @@ append_subtriangles :: proc(
 		adj_vert_1 := triangle[midpoint_edge_idx]
 		adj_vert_2 := triangle[(midpoint_edge_idx + 1) % 3]
 		triangles := [2]Triangle {
-			{u32(midpoint_indices[0]), adj_vert_2, opposite_vert},
-			{u32(midpoint_indices[0]), opposite_vert, adj_vert_1},
+			{adj_vert_2, opposite_vert, u32(midpoint_indices[0])},
+			{opposite_vert, adj_vert_1, u32(midpoint_indices[0])},
 		}
-        uvs := [2]TriangleUV{{}, full_uv}
+		uvs := [2]TriangleUV{edge_uv, edge_uv}
 
 		append(dest_dyn, ..triangles[:])
 		append(uvs_dyn, ..uvs[:])
@@ -1388,29 +1402,29 @@ append_subtriangles :: proc(
 		append(dest_dyn, ..triangles[:])
 		append(uvs_dyn, ..uvs[:])
 
-    case .bounding:
-        append(dest_dyn, triangle)
-        append(uvs_dyn, full_uv)
-    case .curve: 
-        off_curve_vert := 0
-        for on_curve[triangle[off_curve_vert]] do off_curve_vert += 1
+	case .bounding:
+		append(dest_dyn, triangle)
+		append(uvs_dyn, full_uv)
+	case .curve:
+		off_curve_vert := 0
+		for on_curve[triangle[off_curve_vert]] do off_curve_vert += 1
 
-        next := get_next_vert(end_contours, u16(triangle[off_curve_vert]))
+		next := get_next_vert(end_contours, u16(triangle[off_curve_vert]))
 
-        inner := false
-        if triangle[(off_curve_vert + 1) % 3] == u32(next) do inner = true
-        before := inner ? off_curve_vert + 2 : off_curve_vert + 1
-        before %= 3
-        after := inner ? off_curve_vert + 1 : off_curve_vert + 2
-        after %= 3
+		inner := true
+		if triangle[(off_curve_vert + 1) % 3] == u32(next) do inner = false
+		before := inner ? off_curve_vert + 2 : off_curve_vert + 1
+		before %= 3
+		after := inner ? off_curve_vert + 1 : off_curve_vert + 2
+		after %= 3
 
-        uvs : TriangleUV
-        uvs[before] = {{0, 0}, b64(inner)}
-        uvs[off_curve_vert] = {{0.5, 1}, b64(inner)}
-        uvs[after] = {{1, 1}, b64(inner)}
+		uvs: TriangleUV
+		uvs[before] = {{0, 0}, b64(inner)}
+		uvs[off_curve_vert] = {{0.5, 0}, b64(inner)}
+		uvs[after] = {{1, 1}, b64(inner)}
 
-        append(dest_dyn, triangle)
-        append(uvs_dyn, uvs)
+		append(dest_dyn, triangle)
+		append(uvs_dyn, uvs)
 	}
 }
 
@@ -1418,8 +1432,6 @@ chordal_edge_triangulation :: proc(
 	all_verts: ^[dynamic]Vec2f,
 	dest_dyn: ^[dynamic]Triangle,
 	uvs_dyn: ^[dynamic]TriangleUV,
-	end_contours: []u16,
-	on_curve: []bool,
 ) {
 	edge_flags := make([]edge_flags, state.next_edge, context.temp_allocator)
 
@@ -1442,8 +1454,11 @@ chordal_edge_triangulation :: proc(
 			midpoint_indices := [3]u16{}
 			n_midpoints := 0
 
-            has_bound_edge := false
-            is_curve := false
+			has_bound_edge := false
+
+			is_curve := false
+			off_curve_idx := 0
+			n_consecutive := 0
 
 			triangle: for tri_idx in 0 ..< 3 {
 				defer current_edge = l_next(current_edge)
@@ -1454,7 +1469,7 @@ chordal_edge_triangulation :: proc(
 
 				new_tri[tri_idx] = u32(current_origin)
 
-				if is_constraint_edge(end_contours, on_curve, current_edge) {
+				if is_constraint_edge(current_edge) {
 					constraint_edges[n_constraints] = tri_idx
 					n_constraints += 1
 				} else if .midpoint_added not_in edge_flags[current_edge] {
@@ -1468,24 +1483,54 @@ chordal_edge_triangulation :: proc(
 					edge_flags[current_edge] += {.midpoint_added}
 				}
 
-                if is_bound_edge(on_curve, current_edge) {
-                    has_bound_edge = true
-                } else if !on_curve[current_origin] {
-                    is_curve = true
-                }
+				if is_bound_edge(state.on_curve, current_edge) {
+					has_bound_edge = true
+				} else if !state.on_curve[current_origin] {
+					off_curve_idx = tri_idx
+					is_curve = true
+				}
+
+				{
+					orig_next := get_next_vert(
+						state.end_contours,
+						current_origin,
+					)
+					dest_next := get_next_vert(
+						state.end_contours,
+						current_dest,
+					)
+					if orig_next == current_dest || dest_next == orig_next {
+						n_consecutive += 1
+					}
+				}
 			}
 
 			if e != current_edge do continue
 
-            type := triangle_type(new_tri, n_constraints, has_bound_edge, is_curve)
+			if is_curve {
+				b1 := u16(new_tri[off_curve_idx])
+				s, e := get_contour(state.end_contours, b1)
+				b2 := get_next_vert(s, e, b1)
+
+				other := u16(new_tri[(off_curve_idx + 1) % 3])
+
+				if other == b2 do other = u16(new_tri[(off_curve_idx + 2) % 3])
+
+				if get_next_vert(s, e, other) != b1 do is_curve = false
+			}
+
+			type := triangle_type(
+				new_tri,
+				n_constraints,
+				has_bound_edge,
+				is_curve,
+			)
 			append_subtriangles(
 				all_verts,
 				dest_dyn,
 				uvs_dyn,
-                on_curve,
-                end_contours,
 				new_tri,
-                type,
+				type,
 				constraint_edges[:n_constraints],
 				midpoint_indices[:n_midpoints],
 			)
@@ -1538,18 +1583,15 @@ triangulate_vertices_w_inout :: proc(
 		log.debug("end_contours", end_contours)
 	}
 
+	state.on_curve = on_curve
+	state.end_contours = end_contours
+
 	when version == 1 {
 		traverse_triangles(triangles, uvs, end_contours, on_curve)
 	} else when version == 2 {
 		traverse_triangles_2(triangles, uvs, end_contours, on_curve)
 	} else when version == 3 {
-		chordal_edge_triangulation(
-			all_verts,
-			triangles,
-			uvs,
-			end_contours,
-			on_curve,
-		)
+		chordal_edge_triangulation(all_verts, triangles, uvs)
 	}
 }
 
