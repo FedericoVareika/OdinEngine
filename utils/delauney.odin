@@ -439,12 +439,39 @@ collinear :: proc(a, b, c: u16) -> bool {
 	return abs(d) <= EPSILON
 }
 
+convex :: proc(quad_verts: [4]u16) -> bool {
+	pos_sign := true
+	neg_sign := true
+	for i in 0 ..< 4 {
+		vert_i0 := get_vert(quad_verts[i])
+		vert_i1 := get_vert(quad_verts[(i + 1) % 4])
+		vert_i2 := get_vert(quad_verts[(i + 2) % 4])
+		side_i0: [2]i64 = {
+			i64(vert_i1.x - vert_i0.x),
+			i64(vert_i1.y - vert_i0.y),
+		}
+		side_i1: [2]i64 = {
+			i64(vert_i2.x - vert_i1.x),
+			i64(vert_i2.y - vert_i1.y),
+		}
+
+		value := la.vector_cross2(side_i1, side_i0)
+		pos_sign &&= value > 0
+		neg_sign &&= value < 0
+		if value == 0 do return false
+	}
+
+	return pos_sign || neg_sign
+}
+
 init_mappings_wo_len :: proc() {
 	for i in 0 ..< state.vert_count do state.mappings[i] = u16(i)
+	state.mappings = state.mappings[:state.vert_count]
 }
 
 init_mappings_w_len :: proc(verts: int) {
 	for i in 0 ..< verts do state.mappings[i] = u16(i)
+	state.mappings = state.mappings[:state.vert_count]
 }
 
 init_mappings :: proc {
@@ -978,7 +1005,11 @@ traverse_triangles :: proc(
 						get_next_vert(start_b, end_b, b) == c ||
 						get_next_vert(start_c, end_c, c) == a
 					is_outside := same_contour && vertices_growing
-					filled := on_curve[a] && on_curve[b] && on_curve[c]
+
+					filled := int(a) >= len(state.on_curve)
+					filled ||= int(b) >= len(state.on_curve)
+					filled ||= int(c) >= len(state.on_curve)
+					filled ||= on_curve[a] && on_curve[b] && on_curve[c]
 
 					filled ||= !on_curve[a] && !(ccw_from_c || cw_from_b)
 					filled ||= !on_curve[b] && !(ccw_from_a || cw_from_c)
@@ -1096,14 +1127,6 @@ apply_constraint :: proc(a, b: u16) {
 
 	aux := l_next(a_edge)
 
-	{
-		second := aux
-		for _ in 0 ..= 3 {
-			log.debug("lnext = ", real_orig(second), real_dest(second))
-			second = l_next(second)
-		}
-	}
-
 	log.debug("aux", real_orig(aux), real_dest(aux))
 	intersecting_queue := make([dynamic]EdgePtr, context.temp_allocator)
 
@@ -1118,15 +1141,6 @@ apply_constraint :: proc(a, b: u16) {
 		aux_orig := get_vert(orig(aux)^)
 		aux_dest := get_vert(dest(aux)^)
 		k := 0
-		log.info(
-			"intersects(",
-			a_vert,
-			b_vert,
-			aux_orig,
-			aux_dest,
-			"):",
-			intersects(a_vert, b_vert, aux_orig, aux_dest),
-		)
 		for !intersects(a_vert, b_vert, aux_orig, aux_dest) {
 			defer k += 1
 			if dest(aux)^ == b_vert_ptr do break main_loop
@@ -1148,7 +1162,18 @@ apply_constraint :: proc(a, b: u16) {
 
 	i := 0
 	for len(intersecting_queue) != 0 {
+		defer i = (i + 1) %% len(intersecting_queue)
 		e := intersecting_queue[i]
+
+		quad_verts := [?]u16 {
+			real_orig(e),
+			real_dest(o_prev(e)),
+			real_dest(e),
+			real_dest(o_next(e)),
+		}
+
+		if !convex(quad_verts) do continue
+
 		prev_orig := real_orig(e)
 		prev_dest := real_dest(e)
 		swap(e)
@@ -1159,6 +1184,9 @@ apply_constraint :: proc(a, b: u16) {
 		if (orig(e)^ == a_vert_ptr && dest(e)^ == b_vert_ptr) ||
 		   (orig(e)^ == b_vert_ptr && dest(e)^ == a_vert_ptr) ||
 		   !intersects(a_vert, b_vert, e_origin, e_dest) {
+			unordered_remove(&intersecting_queue, i)
+			i -= 1
+
 			if collinear(real_orig(e), real_dest(e), prev_orig) ||
 			   collinear(real_orig(e), real_dest(e), prev_dest) {
 				when ODIN_DEBUG {
@@ -1172,12 +1200,9 @@ apply_constraint :: proc(a, b: u16) {
 				when ODIN_DEBUG {
 					log.info("removing: ", real_orig(e), real_dest(e))
 				}
-				unordered_remove(&intersecting_queue, i)
-				i -= 1
 			}
 		}
 		if len(intersecting_queue) == 0 do break
-		i = (i + 1) %% len(intersecting_queue)
 	}
 }
 
@@ -1572,15 +1597,39 @@ append_subtriangles_2 :: proc(
 	end_contours := state.end_contours
 	on_curve := state.on_curve
 
-	full_uv := TriangleUV{{{0, 1}, true}, {{0, 1}, true}, {{0, 1}, true}}
+	full_uv :: proc(flag: bool) -> TriangleUV {
+		return TriangleUV {
+			{{0, 1}, b64(flag)},
+			{{0, 1}, b64(flag)},
+			{{0, 1}, b64(flag)},
+			// {{0, 1}, true},
+			// {{0, 1}, true},
+			// {{0, 1}, true},
+		}
+	}
+
+	edge_uv_pos :: proc(inside: int, flag: bool) -> TriangleUV {
+		tri := TriangleUV {
+			{{0, 0}, b64(flag)},
+			{{0, 0}, b64(flag)},
+			{{0, 0}, b64(flag)},
+			// {{0, 0}, true},
+			// {{0, 0}, true},
+			// {{0, 0}, true},
+		}
+
+		tri[inside].uv.y = 1
+		return tri
+	}
 
 	// border, border, inside 
-	edge_uv :: proc(flag: bool) -> TriangleUV {
-		return TriangleUV {
-			{{0, 0}, b64(flag)},
-			{{0, 0}, b64(flag)},
-			{{0, 1}, b64(flag)},
-		}
+	edge_uv_no_pos :: proc(flag: bool) -> TriangleUV {
+		return edge_uv_pos(2, flag)
+	}
+
+	edge_uv :: proc {
+		edge_uv_pos,
+		edge_uv_no_pos,
 	}
 
 	// inside, inside, border 
@@ -1612,14 +1661,14 @@ append_subtriangles_2 :: proc(
 			{opp, adj_vert_1, u32(midpoint_indices[0])},
 		}
 
-        // uvs := [2]TriangleUV{}
-        // for t, i in triangles {
-        //     uvs[i] = build_uv(t, inside)
-        // }
+		// uvs := [2]TriangleUV{}
+		// for t, i in triangles {
+		//     uvs[i] = build_uv(t, inside)
+		// }
 
 		uvs := [2]TriangleUV {
-			at_border[adj_vert_2_idx] ? edge_uv(inside) : full_uv,
-			at_border[opp_idx] ? edge_uv(inside) : full_uv,
+			at_border[adj_vert_2_idx] ? edge_uv(inside) : full_uv(inside),
+			at_border[opp_idx] ? edge_uv(inside) : full_uv(inside),
 		}
 
 		append(dest_dyn, ..triangles[:])
@@ -1646,24 +1695,24 @@ append_subtriangles_2 :: proc(
 			m2 = u32(midpoint_indices[0])
 		}
 
-		triangles := [3]Triangle{
+		triangles := [3]Triangle {
 			{sleeve_1, sleeve_2, u32(m1)},
 			{u32(m2), u32(m1), sleeve_2},
 			{u32(m1), u32(m2), opp},
 		}
 		// uvs := [3]TriangleUV{}
-        // for t, i in triangles {
-            // uvs[i] = build_uv(t, inside)
-        // }
+		// for t, i in triangles {
+		// uvs[i] = build_uv(t, inside)
+		// }
 
 		// 	{sleeve_1, sleeve_2, u32(m1)},
 		// 	{u32(m2), u32(m1), sleeve_2},
 		// 	{u32(m1), u32(m2), opp},
 
-        uvs := [3]TriangleUV {
-			at_border[sleeve_1_idx] ? edge_uv(inside) : full_uv,
-			full_uv,
-			full_uv,
+		uvs := [3]TriangleUV {
+			at_border[sleeve_1_idx] ? edge_uv(inside) : full_uv(inside),
+			full_uv(inside),
+			full_uv(inside),
 		}
 
 		append(dest_dyn, ..triangles[:])
@@ -1686,7 +1735,12 @@ append_subtriangles_2 :: proc(
 			{m2, c, m3},
 			{m3, a, m1},
 		}
-		uvs := [4]TriangleUV{full_uv, full_uv, full_uv, full_uv}
+		uvs := [4]TriangleUV {
+			full_uv(inside),
+			full_uv(inside),
+			full_uv(inside),
+			full_uv(inside),
+		}
 
 		append(dest_dyn, ..triangles[:])
 		append(uvs_dyn, ..uvs[:])
@@ -1709,14 +1763,36 @@ append_subtriangles_2 :: proc(
 		cent := u32(append_vertex(all_verts, centroid))
 
 		triangles := [3]Triangle{{a, b, cent}, {b, c, cent}, {c, a, cent}}
-		uvs := [3]TriangleUV{full_uv, full_uv, full_uv}
+
+		uvs := [3]TriangleUV {
+			at_border[0] ? edge_uv(inside) : full_uv(inside),
+			at_border[1] ? edge_uv(inside) : full_uv(inside),
+			at_border[2] ? edge_uv(inside) : full_uv(inside),
+		}
 
 		append(dest_dyn, ..triangles[:])
 		append(uvs_dyn, ..uvs[:])
 
 	case .bounding:
 		append(dest_dyn, triangle)
-		append(uvs_dyn, full_uv)
+
+		amount_at_border := 0
+		border_idx := 0
+		for b, i in at_border {
+			if b {
+				amount_at_border += 1
+				border_idx = i
+			}
+		}
+		any_at_border := amount_at_border > 0
+
+		any_at_border &&= len(constraint_edges) > 0
+
+		append(
+			uvs_dyn,
+			any_at_border ? edge_uv((border_idx + 2) % 3, inside) : full_uv(inside),
+		)
+
 	case .curve:
 		off_curve_vert := 0
 		for on_curve[triangle[off_curve_vert]] do off_curve_vert += 1
@@ -1901,37 +1977,42 @@ append_triangles_2 :: proc(
 		)
 		log.debug("type", type)
 
-		#partial switch type {
-		case .curve:
-			assert(is_curve)
-			after := inner_edge ? off_curve_idx + 1 : off_curve_idx + 2
-			after %%= 3
-			before := inner_edge ? off_curve_idx + 2 : off_curve_idx + 1
-			before %%= 3
+		when cut == true {
+			#partial switch type {
+			case .curve:
+				assert(is_curve)
+				after := inner_edge ? off_curve_idx + 1 : off_curve_idx + 2
+				after %%= 3
+				before := inner_edge ? off_curve_idx + 2 : off_curve_idx + 1
+				before %%= 3
 
-			new_uv[before].uv = {0, 0}
-			new_uv[off_curve_idx].uv = {0.5, 0}
-			new_uv[after].uv = {1, 1}
-			if inner_edge {
-				new_uv[0].z = false
-				new_uv[1].z = false
-				new_uv[2].z = false
+				new_uv[before].uv = {0, 0}
+				new_uv[off_curve_idx].uv = {0.5, 0}
+				new_uv[after].uv = {1, 1}
+				if inner_edge {
+					new_uv[0].z = false
+					new_uv[1].z = false
+					new_uv[2].z = false
+				}
+
+				append(dest_dyn, new_tri)
+				append(uvs_dyn, new_uv)
+			case:
+				append_subtriangles_2(
+					all_verts,
+					dest_dyn,
+					uvs_dyn,
+					new_tri,
+					type,
+					inside,
+					at_border,
+					constraint_edges[:n_constraint_edges],
+					midpoint_indices[:n_midpoints],
+				)
 			}
-
+		} else {
 			append(dest_dyn, new_tri)
 			append(uvs_dyn, new_uv)
-		case:
-			append_subtriangles_2(
-				all_verts,
-				dest_dyn,
-				uvs_dyn,
-				new_tri,
-				type,
-				inside,
-				at_border,
-				constraint_edges[:n_constraint_edges],
-				midpoint_indices[:n_midpoints],
-			)
 		}
 	}
 }
@@ -1978,15 +2059,15 @@ chordal_edge_triangulation_2 :: proc(
 			if !state.on_curve[i] {
 				continue
 			} else if state.on_curve[next_vert] {
-				// append_triangles_2(
-				// 	all_verts,
-				// 	dest_dyn,
-				// 	uvs_dyn,
-				// 	&edge_flags,
-				// 	&midpoints,
-				// 	constraint_edge,
-				// 	inside = false,
-				// )
+				append_triangles_2(
+					all_verts,
+					dest_dyn,
+					uvs_dyn,
+					&edge_flags,
+					&midpoints,
+					constraint_edge,
+					inside = false,
+				)
 				log.info("here")
 				continue
 			}
@@ -2017,15 +2098,15 @@ chordal_edge_triangulation_2 :: proc(
 				inside = true,
 			)
 
-			// append_triangles_2(
-			// 	all_verts,
-			// 	dest_dyn,
-			// 	uvs_dyn,
-			// 	&edge_flags,
-			// 	&midpoints,
-			// 	leftmost,
-			// 	inside = false,
-			// )
+			append_triangles_2(
+				all_verts,
+				dest_dyn,
+				uvs_dyn,
+				&edge_flags,
+				&midpoints,
+				leftmost,
+				inside = false,
+			)
 			// }
 		}
 	}
@@ -2062,6 +2143,7 @@ triangulate_vertices_w_inout :: proc(
 		quick_sort(0, state.vert_count - 1)
 		state.removed = remove_duplicates()
 	}
+
 	defer delete(state.removed)
 
 	le, re := delaunay(state.mappings)

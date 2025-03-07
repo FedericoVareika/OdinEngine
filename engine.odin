@@ -81,7 +81,8 @@ main :: proc() {
 		gl.load_up_to(3, 3, glfw.gl_set_proc_address)
 		gl.Enable(gl.DEPTH_TEST)
 		gl.Enable(gl.BLEND)
-		gl.Disable(gl.MULTISAMPLE)
+		// gl.Disable(gl.MULTISAMPLE)
+		gl.Enable(gl.MULTISAMPLE)
 		// gl.Enable(gl.SAMPLE_SHADING)
 		// gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
 		gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
@@ -202,8 +203,8 @@ main :: proc() {
 
 	{
 		glyfs, metrics, info := ttf.parse_ttf(
-			// "assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",
-			"assets/fonts/JetBrains/JetBrainsMono-Light.ttf",
+			"assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",
+			// "assets/fonts/JetBrains/JetBrainsMono-Light.ttf",
 			// "assets/fonts/IosevkaTermNerdFontMono-Light.ttf",
 			// "assets/fonts/IosevkaCustom-Light.ttf",
 		)
@@ -607,17 +608,17 @@ render_glyf :: proc() {
 	gl.UseProgram(font)
 
 	hello := `
+%*!@#$^&_=-
 abcdefghijklmnopqrstuvwxyz
 ABCDEFGHIJKLMNOPQRSTUVWXYZ
 123456789
-!@#$%^&*_=-
 {[(<>)]}+?'":|,~\
-hola putas
 `
     // hello = "abcdefghijklmnop"
 
 	scale := utils.Vec2f{1 / state.window.size.x, 1 / state.window.size.y}
     scale *= 0.08 * f32(selected_vert + 1)
+    // scale *= 1.5
 	// scale: f32 = 0.001
 	// scale *= 0.01 * f32(selected_vert + 1)
 	// log.info(f32(ttf_info.y_max - ttf_info.y_min) * scale)
@@ -635,6 +636,7 @@ hola putas
             translation_before_scaling.y -= 1100
             continue
         }
+        // char := 0
 		this_glyf_info := glyf_info[char %% 128]
 		this_glyf_metrics := glyf_metrics[char %% 128]
 		translation_before_scaling.x += f32(
@@ -659,6 +661,6 @@ hola putas
 		)
 		gl.DrawArrays(gl.TRIANGLES, 0, i32(this_glyf_info.triangle_count) * 3)
 		// gl.DrawArrays(gl.POINTS, 0, i32(this_glyf_info.triangle_count) * 3)
+        // break
 	}
-
 }

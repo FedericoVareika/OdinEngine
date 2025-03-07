@@ -91,7 +91,7 @@ load_glyphs :: proc(
 
 		{
 			x, y, on_curve := soa_unzip(coords)
-			context.logger.lowest_level = idx == 'a' ? .Debug : .Warning
+			// context.logger.lowest_level = idx == '%' ? .Debug : .Warning
 			triangulate_vertices(
 				soa_zip(x = x, y = y),
 				end_contours,
@@ -100,7 +100,7 @@ load_glyphs :: proc(
 				&all_triangles,
 				&all_uvs,
 			)
-			context.logger.lowest_level = .Debug
+			// context.logger.lowest_level = .Debug
 
             // for v in added_vertices {
             //     // v: Vec2f = {f32(coord.x), f32(coord.y)}
