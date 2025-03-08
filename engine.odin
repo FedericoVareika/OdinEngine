@@ -81,8 +81,8 @@ main :: proc() {
 		gl.load_up_to(3, 3, glfw.gl_set_proc_address)
 		gl.Enable(gl.DEPTH_TEST)
 		gl.Enable(gl.BLEND)
-		// gl.Disable(gl.MULTISAMPLE)
-		gl.Enable(gl.MULTISAMPLE)
+		gl.Disable(gl.MULTISAMPLE)
+		// gl.Enable(gl.MULTISAMPLE)
 		// gl.Enable(gl.SAMPLE_SHADING)
 		// gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
 		gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
@@ -203,6 +203,8 @@ main :: proc() {
 
 	{
 		glyfs, metrics, info := ttf.parse_ttf(
+            // "assets/fonts/Hack/Hack-Bold.ttf",
+            // "assets/fonts/Helvetica/NeueHaasDisplayMediu.ttf",
 			"assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",
 			// "assets/fonts/JetBrains/JetBrainsMono-Light.ttf",
 			// "assets/fonts/IosevkaTermNerdFontMono-Light.ttf",
@@ -614,21 +616,20 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ
 123456789
 {[(<>)]}+?'":|,~\
 `
+    // hello = "The quick brown fox jumps over the lazy dog"
+    // hello = "&"
     // hello = "abcdefghijklmnop"
 
 	scale := utils.Vec2f{1 / state.window.size.x, 1 / state.window.size.y}
-    scale *= 0.08 * f32(selected_vert + 1)
-    // scale *= 1.5
+    scale *= 0.02 * f32(selected_vert + 1)
+    scale *= 1
 	// scale: f32 = 0.001
-	// scale *= 0.01 * f32(selected_vert + 1)
-	// log.info(f32(ttf_info.y_max - ttf_info.y_min) * scale)
-	// scale *= (f32(math.sin(glfw.GetTime())) + 1) / f32(selected_vert)
 	utils.set_val(font, "scale", scale)
 	utils.set_val(font, "color", utils.Vec3f{0, 0, 0})
 	utils.set_val(font, "selected_vert", i32(selected_vert))
 
 	translation_before_scaling := utils.Vec2f{}
-	translation_after_scaling := utils.Vec2f{-1 - f32(selected_vert) * 0, 0.5}
+	translation_after_scaling := utils.Vec2f{-1 - f32(selected_vert) * 0, -0}
 
 	for char in hello {
         if char == '\n' {

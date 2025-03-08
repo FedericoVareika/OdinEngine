@@ -21,8 +21,8 @@ package utils
 
 EdgePtr :: i32
 VertPtr :: i32
-@(private = "file")
-Vertex :: struct {
+// @(private = "file")
+DelVert :: struct {
 	x, y: i16,
 }
 
@@ -37,7 +37,7 @@ State :: struct {
 	data:                   []VertPtr, // points to the mappings
 	next_edge:              EdgePtr,
 	available_edge:         EdgePtr,
-	vertices:               #soa[]Vertex,
+	vertices:               #soa[]DelVert,
 	vert_count:             int,
 	mappings:               []u16,
 	original_mappings:      []u16,
@@ -53,7 +53,7 @@ state: State
 
 init_state :: proc(max_verts: u32) {
 	n_edges := max_verts * 3
-	state.vertices = make(#soa[]Vertex, max_verts)
+	state.vertices = make(#soa[]DelVert, max_verts)
 	state.edges = make([]EdgePtr, n_edges * 4)
 	state.data = make([]EdgePtr, n_edges * 2)
 
@@ -80,12 +80,12 @@ deinit_state :: proc() {
 }
 
 @(require_results)
-get_vert_from_ptr :: #force_inline proc(v: VertPtr) -> Vertex {
+get_vert_from_ptr :: #force_inline proc(v: VertPtr) -> DelVert {
 	return state.vertices[state.mappings[v]]
 }
 
 @(require_results)
-get_vert_from_real :: #force_inline proc(v: u16) -> Vertex {
+get_vert_from_real :: #force_inline proc(v: u16) -> DelVert {
 	return state.vertices[v]
 }
 
@@ -278,7 +278,7 @@ swap :: proc(e: EdgePtr, loc := #caller_location) {
 import la "core:math/linalg"
 
 @(require_results)
-incircle_vec2 :: proc(pts: [4]Vertex) -> bool {
+incircle_vec2 :: proc(pts: [4]DelVert) -> bool {
 	x2_y2: [4]i128 = {}
 	for &v, i in x2_y2 {
 		px := i128(pts[i].x) * i128(pts[i].x)
@@ -304,7 +304,7 @@ This algorigthm is stolen from Jonathan Richard Shewchuk, more info:
     https://www.cs.cmu.edu/~quake/robust.html
  */
 @(require_results)
-incircle_fast :: proc(pts: [4]Vertex) -> bool {
+incircle_fast :: proc(pts: [4]DelVert) -> bool {
 	a: [2]i128 = {i128(pts[0].x), i128(pts[0].y)}
 	b: [2]i128 = {i128(pts[1].x), i128(pts[1].y)}
 	c: [2]i128 = {i128(pts[2].x), i128(pts[2].y)}
@@ -334,7 +334,7 @@ incircle_fast :: proc(pts: [4]Vertex) -> bool {
 
 @(require_results)
 incircle_ptr :: proc(pts: [4]VertPtr) -> bool {
-	pts_vec2: [4]Vertex
+	pts_vec2: [4]DelVert
 	for &p, i in pts_vec2 {
 		p = get_vert(pts[i])
 		// state.vertices[state.mappings[pts[i]]]
@@ -347,8 +347,14 @@ incircle_expand_ptr :: #force_inline proc(p1, p2, p3, p4: VertPtr) -> bool {
 	return incircle_ptr({p1, p2, p3, p4})
 }
 
+incircle :: proc {
+	incircle_ptr,
+	incircle_expand_ptr,
+	incircle_vec2,
+}
+
 @(require_results)
-ccw_vec2 :: proc(a, b, c: Vertex) -> bool {
+ccw_vec2 :: proc(a, b, c: DelVert) -> bool {
 	m: matrix[3, 3]i128
 	m[0] = {i128(a.x), i128(b.x), i128(c.x)}
 	m[1] = {i128(a.y), i128(b.y), i128(c.y)}
@@ -375,8 +381,18 @@ ccw_ptr :: proc(A, B, C: VertPtr) -> bool {
 	return ccw_vec2(a, b, c)
 }
 
+ccw :: proc {
+	ccw_ptr,
+	ccw_vec2,
+}
+
 @(require_results)
-right_of_vec2 :: proc(x: Vertex, e: EdgePtr) -> bool {
+right_of_raw :: proc(x, a, b: DelVert) -> bool {
+	return ccw(x, b, a)
+}
+
+@(require_results)
+right_of_vec2 :: proc(x: DelVert, e: EdgePtr) -> bool {
 	return ccw(
 		x,
 		get_vert(dest(e)^),
@@ -391,8 +407,14 @@ right_of_ptr :: proc(x: VertPtr, e: EdgePtr) -> bool {
 	return ccw(x, dest(e)^, orig(e)^)
 }
 
+right_of :: proc {
+	right_of_ptr,
+	right_of_vec2,
+	right_of_raw,
+}
+
 @(require_results)
-left_of_vec2 :: proc(x: Vertex, e: EdgePtr) -> bool {
+left_of_vec2 :: proc(x: DelVert, e: EdgePtr) -> bool {
 	// return ccw(x, state.vertices[orig(e)^], state.vertices[dest(e)^])
 	return ccw(x, get_vert(orig(e)^), get_vert(dest(e)^))
 }
@@ -402,41 +424,39 @@ left_of_ptr :: proc(x: VertPtr, e: EdgePtr) -> bool {
 	return ccw(x, orig(e)^, dest(e)^)
 }
 
+left_of :: proc {
+	left_of_ptr,
+	left_of_vec2,
+}
+
 @(require_results)
 valid :: proc(cand, base_l: EdgePtr) -> bool {
 	return ccw(orig(base_l)^, dest(cand)^, dest(base_l)^)
 }
 
-ccw :: proc {
-	ccw_ptr,
-	ccw_vec2,
-}
-right_of :: proc {
-	right_of_ptr,
-	right_of_vec2,
-}
-left_of :: proc {
-	left_of_ptr,
-	left_of_vec2,
-}
-incircle :: proc {
-	incircle_ptr,
-	incircle_expand_ptr,
-	incircle_vec2,
-}
-
-collinear :: proc(a, b, c: u16) -> bool {
-	a_vert := get_vert(a)
-	b_vert := get_vert(b)
-	c_vert := get_vert(c)
-
+@(require_results)
+collinear_vert :: proc(a, b, c: DelVert) -> bool {
 	m: matrix[3, 3]i128
-	m[0] = {i128(a_vert.x), i128(b_vert.x), i128(c_vert.x)}
-	m[1] = {i128(a_vert.y), i128(b_vert.y), i128(c_vert.y)}
+	m[0] = {i128(a.x), i128(b.x), i128(c.x)}
+	m[1] = {i128(a.y), i128(b.y), i128(c.y)}
 	m[2] = {1, 1, 1}
 
 	d := la.determinant(m)
 	return abs(d) <= EPSILON
+}
+
+@(require_results)
+collinear_idx :: proc(a, b, c: u16) -> bool {
+	a_vert := get_vert(a)
+	b_vert := get_vert(b)
+	c_vert := get_vert(c)
+
+	return collinear(a_vert, b_vert, c_vert)
+}
+
+collinear :: proc {
+	collinear_vert,
+	collinear_idx,
 }
 
 convex :: proc(quad_verts: [4]u16) -> bool {
@@ -710,6 +730,8 @@ is_constraint_edge_w_params :: proc(
 
 	next_orig_vert := get_next_vert(s, e, orig_vert)
 	next_dest_vert := get_next_vert(s, e, dest_vert)
+	if next_orig_vert >= u16(len(on_curve)) do return false
+	if next_dest_vert >= u16(len(on_curve)) do return false
 	// log.info("checking constraint:", orig_vert, dest_vert, s, e, next_orig_vert, next_dest_vert)
 	if dest_vert == next_orig_vert do return true
 	if orig_vert == next_dest_vert do return true
@@ -1059,7 +1081,7 @@ traverse_triangles :: proc(
 }
 
 @(require_results)
-intersects :: proc(a1, b1, a2, b2: Vertex) -> bool {
+intersects :: proc(a1, b1, a2, b2: DelVert) -> bool {
 	// (a1b1 x b1b2) . (a1b1 x b1a2) < 0
 	// (a2b2 x b2b1) . (a2b2 x b2a1) < 0
 	a1_: [2]i128 = {i128(a1.x), i128(a1.y)}
@@ -1161,8 +1183,13 @@ apply_constraint :: proc(a, b: u16) {
 	}
 
 	i := 0
-	for len(intersecting_queue) != 0 {
-		defer i = (i + 1) %% len(intersecting_queue)
+	running := true
+	constraint_intersects := 0
+	for running {
+		defer if len(intersecting_queue) > constraint_intersects {
+			i = (i + 1) %% len(intersecting_queue)
+		}
+		defer if len(intersecting_queue) == 0 do running = false
 		e := intersecting_queue[i]
 
 		quad_verts := [?]u16 {
@@ -1173,6 +1200,12 @@ apply_constraint :: proc(a, b: u16) {
 		}
 
 		if !convex(quad_verts) do continue
+		if is_constraint_edge(e) {
+			// constraint_intersects += 1
+			// unordered_remove(&intersecting_queue, i)
+			// i -= 1
+			// continue
+		}
 
 		prev_orig := real_orig(e)
 		prev_dest := real_dest(e)
@@ -1186,24 +1219,12 @@ apply_constraint :: proc(a, b: u16) {
 		   !intersects(a_vert, b_vert, e_origin, e_dest) {
 			unordered_remove(&intersecting_queue, i)
 			i -= 1
-
-			if collinear(real_orig(e), real_dest(e), prev_orig) ||
-			   collinear(real_orig(e), real_dest(e), prev_dest) {
-				when ODIN_DEBUG {
-					log.info(
-						"edge is collinear, do not remove: ",
-						real_orig(e),
-						real_dest(e),
-					)
-				}
-			} else {
-				when ODIN_DEBUG {
-					log.info("removing: ", real_orig(e), real_dest(e))
-				}
-			}
 		}
-		if len(intersecting_queue) == 0 do break
 	}
+    
+    if constraint_intersects > 0 {
+        connect(sym(a_edge), b_edge)
+    }
 }
 
 apply :: #config(APPLY, true)
@@ -1233,7 +1254,7 @@ apply_constraints :: proc(end_contours: []u16, on_curve: []bool) {
 	}
 }
 
-append_vertex :: proc(all_verts: ^[dynamic]Vec2f, v: Vertex) -> int {
+append_vertex :: proc(all_verts: ^[dynamic]Vec2f, v: DelVert) -> int {
 	state.vertices[state.vert_count] = v
 	state.vert_count += 1
 
@@ -1266,11 +1287,11 @@ add_bounding_box :: proc(all_verts: ^[dynamic]Vec2f) {
 	y_min := lowermost - y_size / 10
 	y_max := uppermost + y_size / 10
 
-	bounding_box := [?]Vertex {
-		Vertex{x_min, y_min},
-		Vertex{x_min, y_max},
-		Vertex{x_max, y_min},
-		Vertex{x_max, y_max},
+	bounding_box := [?]DelVert {
+		DelVert{x_min, y_min},
+		DelVert{x_min, y_max},
+		DelVert{x_max, y_min},
+		DelVert{x_max, y_max},
 	}
 
 	for v, i in bounding_box {
@@ -1415,7 +1436,7 @@ append_subtriangles :: proc(
 		b := triangle[1]
 		c := triangle[2]
 
-		centroid := Vertex {
+		centroid := DelVert {
 			get_vert(u16(a)).x + get_vert(u16(b)).x + get_vert(u16(c)).x,
 			get_vert(u16(a)).y + get_vert(u16(b)).y + get_vert(u16(c)).y,
 		}
@@ -1503,7 +1524,7 @@ chordal_edge_triangulation :: proc(
 				} else if .midpoint_added not_in edge_flags[current_edge] {
 					a := get_vert(current_origin)
 					b := get_vert(current_dest)
-					midpoint: Vertex = {(a.x + b.x) / 2, (a.y + b.y) / 2}
+					midpoint: DelVert = {(a.x + b.x) / 2, (a.y + b.y) / 2}
 					midpoint_indices[n_midpoints] = u16(
 						append_vertex(all_verts, midpoint),
 					)
@@ -1753,7 +1774,7 @@ append_subtriangles_2 :: proc(
 		b := triangle[1]
 		c := triangle[2]
 
-		centroid := Vertex {
+		centroid := DelVert {
 			get_vert(u16(a)).x + get_vert(u16(b)).x + get_vert(u16(c)).x,
 			get_vert(u16(a)).y + get_vert(u16(b)).y + get_vert(u16(c)).y,
 		}
@@ -1848,13 +1869,7 @@ append_triangles_2 :: proc(
 	first := true
 	current_edge := start_edge
 	running := true
-	log.info("inside:", inside)
 	for running {
-		log.info(
-			"appending at:",
-			real_orig(current_edge),
-			real_dest(current_edge),
-		)
 		defer {
 			current_edge = next_edge(current_edge)
 			if is_constraint_edge(current_edge) {
@@ -1920,7 +1935,7 @@ append_triangles_2 :: proc(
 				if .midpoint_added not_in edge_flags[current_edge] {
 					a := get_vert(current_origin)
 					b := get_vert(current_dest)
-					midpoint: Vertex = {(a.x + b.x) / 2, (a.y + b.y) / 2}
+					midpoint: DelVert = {(a.x + b.x) / 2, (a.y + b.y) / 2}
 					midpoints[current_edge] = u16(
 						append_vertex(all_verts, midpoint),
 					)
@@ -1932,7 +1947,6 @@ append_triangles_2 :: proc(
 				midpoint_indices[n_midpoints] = midpoints[current_edge]
 				n_midpoints += 1
 			}
-
 		}
 		assert(current_edge == triangle_constraint_edge)
 
@@ -1965,9 +1979,6 @@ append_triangles_2 :: proc(
 				if !consecutive do is_curve = false
 			}
 		}
-		log.debug("inner_edge", inner_edge)
-		log.debug("is_curve", is_curve)
-		log.debug("n_constraints", n_constraint_edges)
 
 		type := triangle_type(
 			new_tri,
@@ -1975,7 +1986,6 @@ append_triangles_2 :: proc(
 			has_bound_edge,
 			is_curve,
 		)
-		log.debug("type", type)
 
 		when cut == true {
 			#partial switch type {
@@ -2032,6 +2042,7 @@ chordal_edge_triangulation_2 :: proc(
 		defer c_start = c_end + 1
 		// log.info(c_start, c_end)
 		for i := c_start; i <= c_end; i += 1 {
+			log.info(i)
 			if state.removed[i] do continue
 			next_vert := get_next_vert(c_start, c_end, i)
 			for state.removed[next_vert] {
@@ -2040,10 +2051,8 @@ chordal_edge_triangulation_2 :: proc(
 			constraint_edge := get_edge(i, next_vert)
 			assert(constraint_edge < state.next_edge)
 
-			log.info("-------------", i, next_vert, "-------------")
 			// Append valid trianges 
 			// (the ones to the right of the constraint edge)
-			// if !visited_edges[constraint_edge] {
 			append_triangles_2(
 				all_verts,
 				dest_dyn,
@@ -2053,8 +2062,6 @@ chordal_edge_triangulation_2 :: proc(
 				constraint_edge,
 				inside = true,
 			)
-
-			// }
 
 			if !state.on_curve[i] {
 				continue
@@ -2068,7 +2075,6 @@ chordal_edge_triangulation_2 :: proc(
 					constraint_edge,
 					inside = false,
 				)
-				log.info("here")
 				continue
 			}
 
@@ -2087,7 +2093,6 @@ chordal_edge_triangulation_2 :: proc(
 				leftmost = constraint_edge
 			}
 
-			// if !visited_edges[constraint_edge] {
 			append_triangles_2(
 				all_verts,
 				dest_dyn,
@@ -2107,7 +2112,6 @@ chordal_edge_triangulation_2 :: proc(
 				leftmost,
 				inside = false,
 			)
-			// }
 		}
 	}
 }
@@ -2116,7 +2120,7 @@ chordal_edge_triangulation_2 :: proc(
 version :: #config(V, 4)
 
 triangulate_vertices_w_inout :: proc(
-	vertices: #soa[]Vertex,
+	vertices: #soa[]DelVert,
 	end_contours: []u16,
 	on_curve: []bool,
 	all_verts: ^[dynamic]Vec2f,
