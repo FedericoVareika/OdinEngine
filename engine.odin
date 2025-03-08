@@ -37,6 +37,7 @@ b: [3]utils.Vec2f = {
 }
 
 selected_vert := 0
+font_size: f32 = 1
 
 // letter :: #config(LETTER, '7')
 glyf_sbos: utils.GlyfSBOs
@@ -203,9 +204,8 @@ main :: proc() {
 
 	{
 		glyfs, metrics, info := ttf.parse_ttf(
-            // "assets/fonts/Hack/Hack-Bold.ttf",
-            // "assets/fonts/Helvetica/NeueHaasDisplayMediu.ttf",
-			"assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",
+			// "assets/fonts/Hack/Hack-Bold.ttf",
+			"assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",// "assets/fonts/Helvetica/NeueHaasDisplayMediu.ttf",
 			// "assets/fonts/JetBrains/JetBrainsMono-Light.ttf",
 			// "assets/fonts/IosevkaTermNerdFontMono-Light.ttf",
 			// "assets/fonts/IosevkaCustom-Light.ttf",
@@ -471,29 +471,6 @@ update :: proc() {
 		}
 	}
 
-	// if UI.do_button(
-	// 	"Do something",
-	// 	Rect({pos = {20, 20}, size = {100, 50}}),
-	// 	1,
-	// ) {
-	// 	opposite = !opposite
-	// }
-
-	// {
-	// 	if targeting != nil {
-	// 		targeting^ = state.mouse.pos
-	// 	}
-	// }
-
-	// b_size: utils.Vec2f = {20, 20}
-	// for &b_i, idx in b {
-	// 	r := utils.Rect({b_i - (b_size / 2), b_size})
-	// 	if UI.do_button("", r, i32(idx) + 2) {
-	// 		if targeting == nil do targeting = &b_i
-	// 		else do targeting = nil
-	// 	}
-	// }
-
 	if UI.do_button("Prev", Rect({{20, 20}, {100, 50}}), 1) {
 		selected_vert -= 1
 		// selected_vert %%= glyf_npoints 
@@ -505,6 +482,16 @@ update :: proc() {
 		// selected_vert %%= glyf_npoints 
 		log.debug("next selected vert", selected_vert)
 	}
+
+    log.debug(font_size)
+	UI.do_slider(
+		"Font Size",
+		Rect({{20, 100}, {500, 50}}),
+		&font_size,
+		1,
+		30,
+		3,
+	)
 
 	update_time()
 }
@@ -616,13 +603,15 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ
 123456789
 {[(<>)]}+?'":|,~\
 `
-    // hello = "The quick brown fox jumps over the lazy dog"
-    // hello = "&"
-    // hello = "abcdefghijklmnop"
+
+
+	// hello = "The quick brown fox jumps over the lazy dog"
+	// hello = "&"
+	// hello = "abcdefghijklmnop"
 
 	scale := utils.Vec2f{1 / state.window.size.x, 1 / state.window.size.y}
-    scale *= 0.02 * f32(selected_vert + 1)
-    scale *= 1
+	scale *= 0.02 * font_size
+	scale *= 1
 	// scale: f32 = 0.001
 	utils.set_val(font, "scale", scale)
 	utils.set_val(font, "color", utils.Vec3f{0, 0, 0})
@@ -632,12 +621,12 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ
 	translation_after_scaling := utils.Vec2f{-1 - f32(selected_vert) * 0, -0}
 
 	for char in hello {
-        if char == '\n' {
-            translation_before_scaling.x = 0
-            translation_before_scaling.y -= 1100
-            continue
-        }
-        // char := 0
+		if char == '\n' {
+			translation_before_scaling.x = 0
+			translation_before_scaling.y -= 1100
+			continue
+		}
+		// char := 0
 		this_glyf_info := glyf_info[char %% 128]
 		this_glyf_metrics := glyf_metrics[char %% 128]
 		translation_before_scaling.x += f32(
@@ -662,6 +651,6 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ
 		)
 		gl.DrawArrays(gl.TRIANGLES, 0, i32(this_glyf_info.triangle_count) * 3)
 		// gl.DrawArrays(gl.POINTS, 0, i32(this_glyf_info.triangle_count) * 3)
-        // break
+		// break
 	}
 }
