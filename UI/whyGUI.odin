@@ -200,9 +200,6 @@ draw_letter :: proc(
 		return
 	}
 
-	// font_size_mult := pts / f32(glyf_metrics.hor_metric.adv_width)
-	// utils.set_val(font, "font_size_mult", font_size_mult)
-
 	non_scaled_translation.x +=
 		f32(glyf_metrics.hor_metric.adv_width) * font_size_mult
 
@@ -254,9 +251,7 @@ render :: proc(screen_size: utils.Vec2f, font_size: f32) {
 
 			non_scaled_translation := elem.rect.pos
 			non_scaled_translation.y += (elem.rect.size.y + pts * 0.8) / 2
-			// non_scaled_translation.y += pts / 2
 			scaled_translation := utils.Vec2f{-1, 1}
-			// translation_after_scaling *= 0
 
 			for letter in elem.label {
 				draw_letter(
