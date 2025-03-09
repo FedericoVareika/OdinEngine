@@ -23,9 +23,11 @@ uniform int selected_vert;
 uniform int vertex_offset;
 uniform int triangle_offset;
 
-uniform vec2 scale;
-uniform vec2 translation_before_scaling; 
-uniform vec2 translation_after_scaling; 
+uniform float font_size_mult;
+uniform vec2 screen_scale;
+
+uniform vec2 non_scaled_translation; 
+uniform vec2 scaled_translation; 
 
 out vec2 uv;
 out float inner;
@@ -38,20 +40,10 @@ void main() {
     inner = uvs[offset_idx].z ? 1.0f : -1.0f;
 
     vec2 vertex = vertices[index];
-    vertex += translation_before_scaling;
-    vertex *= scale; 
-    vertex += translation_after_scaling;
-    // bool on_curve = on_curves[index];
-
-    // uvz = vec3(0, 1, 1);
-
-    uint triangle = index / 3;
-
-    // color = vec3(
-    //         step(2, triangle++ % 3),
-    //         step(2, triangle++ % 3),
-    //         step(2, triangle % 3)
-    //     );
+    vertex *= font_size_mult;
+    vertex += vec2(non_scaled_translation.x, -1 * non_scaled_translation.y); 
+    vertex *= screen_scale;
+    vertex += scaled_translation;
 
     gl_Position = vec4(vertex, -0.2, 1);
     gl_PointSize = 3;

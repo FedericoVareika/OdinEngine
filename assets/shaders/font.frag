@@ -1,5 +1,4 @@
 #version 430 core
-// #extension GL_NV_gpu_shader5 : enable
 
 uniform vec3 color;
 
@@ -28,6 +27,6 @@ void main() {
 
     // alpha = step(0, -dist);
 
-    frag_color = vec4(vec3(color.x * inner, color.y, -color.z * inner), alpha);
+    frag_color = vec4(color, alpha);
     // frag_color = vec4(color, 1);
 }

@@ -37,7 +37,7 @@ b: [3]utils.Vec2f = {
 }
 
 selected_vert := 0
-font_size: f32 = 1
+font_size: f32 = 25
 
 // letter :: #config(LETTER, '7')
 glyf_sbos: utils.GlyfSBOs
@@ -175,11 +175,6 @@ main :: proc() {
 		if !ok do return
 	}
 
-	// UI
-	{
-		UI.init(state.graphics.shaders["rect"])
-	}
-
 	// Texture parameters
 	utils.init_stbi()
 	utils.load_textures(texture_path, texture_filenames, &state.textures)
@@ -204,8 +199,7 @@ main :: proc() {
 
 	{
 		glyfs, metrics, info := ttf.parse_ttf(
-			// "assets/fonts/Hack/Hack-Bold.ttf",
-			"assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",// "assets/fonts/Helvetica/NeueHaasDisplayMediu.ttf",
+			"assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",
 			// "assets/fonts/JetBrains/JetBrainsMono-Light.ttf",
 			// "assets/fonts/IosevkaTermNerdFontMono-Light.ttf",
 			// "assets/fonts/IosevkaCustom-Light.ttf",
@@ -214,6 +208,21 @@ main :: proc() {
 		glyf_metrics = metrics
 		glyf_sbos, glyf_info = utils.load_glyphs(glyfs, ttf_info)
 	}
+
+	// UI
+	{
+		UI.init(
+			state.graphics.shaders["rect"],
+			state.graphics.shaders["font"],
+			u32(ttf_info.x_min),
+			u32(ttf_info.x_max),
+			u32(ttf_info.y_min),
+			u32(ttf_info.y_max),
+			glyf_info,
+			glyf_metrics,
+		)
+	}
+
 
 	{
 		using gl
@@ -483,13 +492,13 @@ update :: proc() {
 		log.debug("next selected vert", selected_vert)
 	}
 
-    log.debug(font_size)
+	log.debug(font_size)
 	UI.do_slider(
 		"Font Size",
-		Rect({{20, 100}, {500, 50}}),
+		Rect({{20, 100}, {200, 50}}),
 		&font_size,
 		1,
-		30,
+		100,
 		3,
 	)
 
@@ -561,9 +570,9 @@ render :: proc() {
 
 	// gl.DrawElements(gl.TRIANGLES, len(indices) * 3, gl.UNSIGNED_INT, nil)
 
-	UI.render(state.window.size)
 	// render_bezier()
-	render_glyf()
+	UI.render(state.window.size, font_size)
+	// render_glyf()
 }
 
 render_bezier :: proc() {

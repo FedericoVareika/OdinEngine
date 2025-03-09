@@ -108,7 +108,7 @@ mouse_button_callback :: proc "c" (
 mouse_pos_callback :: proc "c" (window: glfw.WindowHandle, x_pos, y_pos: f64) {
 	context = runtime.default_context()
 
-	new_mouse_pos: utils.Vec2f = {f32(x_pos), state.window.size.y - f32(y_pos)}
+	new_mouse_pos: utils.Vec2f = {f32(x_pos), f32(y_pos)}
 	if (rotating) {
 		rotate_camera(
 			&state,

@@ -44,7 +44,7 @@ rotate_camera_state :: proc(state: ^State) {
 		f32(time.delta_s)
 
 	camera.euler_angles.pitch += delta_angles.x
-	camera.euler_angles.yaw += delta_angles.y
+	camera.euler_angles.yaw -= delta_angles.y
 	camera.euler_angles.roll += delta_angles.z
 
 	{
@@ -65,7 +65,7 @@ rotate_camera_mouse :: proc(state: ^State, delta_x, delta_y: f32) {
     delta_y_angle := delta_y * state.mouse.sensitivity 
 
 	state.camera.euler_angles.yaw += linalg.to_radians(delta_x_angle)
-	state.camera.euler_angles.pitch += linalg.to_radians(delta_y_angle)
+	state.camera.euler_angles.pitch -= linalg.to_radians(delta_y_angle)
     
 	{
 		using state.camera.euler_angles
