@@ -38,6 +38,10 @@ b: [3]utils.Vec2f = {
 
 selected_vert := 0
 font_size: f32 = 25
+font_smoothness: f32 = 1
+
+multisample := false
+toggle_multisample := false
 
 // letter :: #config(LETTER, '7')
 glyf_sbos: utils.GlyfSBOs
@@ -83,9 +87,6 @@ main :: proc() {
 		gl.Enable(gl.DEPTH_TEST)
 		gl.Enable(gl.BLEND)
 		gl.Disable(gl.MULTISAMPLE)
-		// gl.Enable(gl.MULTISAMPLE)
-		// gl.Enable(gl.SAMPLE_SHADING)
-		// gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
 		gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
 		// Enable v-sync
@@ -199,8 +200,8 @@ main :: proc() {
 
 	{
 		glyfs, metrics, info := ttf.parse_ttf(
-			"assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",
-			// "assets/fonts/JetBrains/JetBrainsMono-Light.ttf",
+			// "assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",
+			"assets/fonts/JetBrains/JetBrainsMono-Light.ttf",
 			// "assets/fonts/IosevkaTermNerdFontMono-Light.ttf",
 			// "assets/fonts/IosevkaCustom-Light.ttf",
 		)
@@ -492,7 +493,6 @@ update :: proc() {
 		log.debug("next selected vert", selected_vert)
 	}
 
-	log.debug(font_size)
 	UI.do_slider(
 		"Font Size",
 		Rect({{20, 100}, {200, 50}}),
@@ -502,8 +502,32 @@ update :: proc() {
 		3,
 	)
 
+	UI.do_slider(
+		"Font Smoothness",
+		Rect({{20, 170}, {200, 50}}),
+		&font_smoothness,
+		0,
+		3,
+		4,
+	)
+
+    if UI.do_button("Toggle MSAA", Rect({{240, 170}, {100, 50}}), 5) {
+        if multisample do gl.Enable(gl.MULTISAMPLE)
+        else do gl.Disable(gl.MULTISAMPLE)
+
+        multisample = !multisample
+    }
+
+    if multisample {
+        UI.do_text("On", Rect{{360, 170}, {50, 50}})
+    } else {
+        UI.do_text("Off", Rect{{360, 170}, {50, 50}})
+    }
+
 	update_time()
 }
+
+import "core:strings"
 
 update_time :: proc() {
 	now := glfw.GetTimerValue()
@@ -570,35 +594,8 @@ render :: proc() {
 
 	// gl.DrawElements(gl.TRIANGLES, len(indices) * 3, gl.UNSIGNED_INT, nil)
 
-	// render_bezier()
-	UI.render(state.window.size, font_size)
+	UI.render(state.window.size, font_size, font_smoothness)
 	// render_glyf()
-}
-
-render_bezier :: proc() {
-	bezier := state.graphics.shaders["bezier"]
-	gl.UseProgram(bezier)
-
-	bezier_rect: utils.Rect = {
-		pos  = {state.window.size.x / 2, 0},
-		size = state.window.size / 2,
-	}
-	bezier_rect_norm := utils.position_rect(bezier_rect, state.window.size)
-	utils.set_val(bezier, "r_norm", bezier_rect_norm)
-	utils.set_val(bezier, "r_real", bezier_rect)
-
-	b_norm: [len(b)]utils.Vec2f
-	for b_i, idx in b {
-		b_norm[idx] = utils.normalize_coord(b_i, state.window.size)
-		b_norm[idx] = utils.center_coord(b_norm[idx])
-	}
-
-	// points := [?]utils.Vec2f{{0, 0}, {1, 0}, {1, 1}}
-
-	utils.set_val(bezier, "t", b_norm[:])
-	utils.set_val(bezier, "opposite", opposite)
-
-	gl.DrawArrays(gl.TRIANGLES, 0, 3)
 }
 
 render_glyf :: proc() {
@@ -614,7 +611,7 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ
 `
 
 
-	// hello = "The quick brown fox jumps over the lazy dog"
+	hello = "The quick brown fox jumps over the lazy dog"
 	// hello = "&"
 	// hello = "abcdefghijklmnop"
 

@@ -140,6 +140,21 @@ do_slider :: proc(
 
 }
 
+do_text :: proc(
+	label: string,
+	rect: utils.Rect,
+) {
+	append(
+		&ui_state.elems,
+		Elem {
+			id = UIID{-1},
+			label = label,
+			rect = rect,
+			background = true,
+		},
+	)
+}
+
 init :: proc(
 	shader: u32,
 	font_shader: u32,
@@ -212,7 +227,11 @@ draw_letter :: proc(
 
 }
 
-render :: proc(screen_size: utils.Vec2f, font_size: f32) {
+render :: proc(
+	screen_size: utils.Vec2f,
+	font_size: f32,
+	font_smoothness: f32 = 1,
+) {
 	#reverse for elem in ui_state.elems {
 		color: utils.Vec3f
 		if elem.background do color = ui_state.graphics.colors.background
@@ -240,11 +259,15 @@ render :: proc(screen_size: utils.Vec2f, font_size: f32) {
 				utils.Vec2f{1 / screen_size.x, 1 / screen_size.y} * 2
 
 			utils.set_val(font, "screen_scale", screen_scale)
+            utils.set_val(font, "smoothness", font_smoothness)
 
 			pts: f32 = font_size
 			font_size_mult :=
 				pts /
-				f32(ui_state.graphics.glyfs.ymax - ui_state.graphics.glyfs.ymin)
+				f32(
+					ui_state.graphics.glyfs.ymax -
+					ui_state.graphics.glyfs.ymin,
+				)
 			utils.set_val(font, "font_size_mult", font_size_mult)
 
 			utils.set_val(font, "color", utils.Vec3f{0, 0, 0})

@@ -1,6 +1,7 @@
 #version 430 core
 
 uniform vec3 color;
+uniform float smoothness;
 
 in vec2 uv;
 in float inner;
@@ -13,13 +14,12 @@ float linearstep(float edge0, float edge1, float x) {
 
 void main() {
     // uv.z is 1 if outer curve, or -1 if inner curve
-    float smoothing_amount = 1;
     float dist = (uv.x * uv.x - uv.y);
     float pixel_size = length(vec2(dFdx(dist), dFdy(dist)));
     dist *= inner;
     dist -= pixel_size * 0.5;
     // pixel_size = length(vec2(dFdx(dist), dFdy(dist)));
-    float alpha = (-dist) / (pixel_size * smoothing_amount);
+    float alpha = (-dist) / (pixel_size * smoothness);
     // float alpha = (1.0 - dist); 
 
     // vec2 gradient = vec2(2 * uv.x, -1);
