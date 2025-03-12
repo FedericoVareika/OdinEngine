@@ -19,6 +19,7 @@ layout(std430, binding = 2) buffer Uvs {
 };
 
 uniform int selected_vert;
+uniform float inside_val;
 
 uniform int vertex_offset;
 uniform int triangle_offset;
@@ -36,7 +37,7 @@ void main() {
     int offset_idx = gl_VertexID + triangle_offset * 3;
     uint index = indices[offset_idx] + vertex_offset;
 
-    uv = uvs[offset_idx].uv;
+    uv = uvs[offset_idx].uv * inside_val;
     inner = uvs[offset_idx].z ? 1.0f : -1.0f;
 
     vec2 vertex = vertices[index];

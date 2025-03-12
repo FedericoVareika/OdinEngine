@@ -21,7 +21,6 @@ package utils
 
 EdgePtr :: i32
 VertPtr :: i32
-// @(private = "file")
 DelVert :: struct {
 	x, y: i16,
 }
@@ -1221,10 +1220,10 @@ apply_constraint :: proc(a, b: u16) {
 			i -= 1
 		}
 	}
-    
-    if constraint_intersects > 0 {
-        connect(sym(a_edge), b_edge)
-    }
+
+	if constraint_intersects > 0 {
+		connect(sym(a_edge), b_edge)
+	}
 }
 
 apply :: #config(APPLY, true)
@@ -1618,6 +1617,8 @@ append_subtriangles_2 :: proc(
 	end_contours := state.end_contours
 	on_curve := state.on_curve
 
+	inside_val :: 1
+
 	full_uv :: proc(flag: bool) -> TriangleUV {
 		return TriangleUV {
 			{{0, 1}, b64(flag)},
@@ -1639,7 +1640,7 @@ append_subtriangles_2 :: proc(
 			// {{0, 0}, true},
 		}
 
-		tri[inside].uv.y = 1
+		tri[inside].uv.y = inside_val
 		return tri
 	}
 
@@ -1654,12 +1655,23 @@ append_subtriangles_2 :: proc(
 	}
 
 	// inside, inside, border 
-	vert_uv :: proc(flag: bool) -> TriangleUV {
-		return TriangleUV {
-			{{0, 1}, b64(flag)},
-			{{0, 1}, b64(flag)},
-			{{0, 0}, b64(flag)},
+	vert_uv_pos :: proc(pos: int, flag: bool) -> TriangleUV {
+		uv := TriangleUV {
+			{{0, inside_val}, b64(flag)},
+			{{0, inside_val}, b64(flag)},
+			{{0, inside_val}, b64(flag)},
 		}
+		uv[pos].uv.y = 0
+		return uv
+	}
+
+	vert_uv_no_pos :: proc(flag: bool) -> TriangleUV {
+		return vert_uv(2, flag)
+	}
+
+	vert_uv :: proc {
+		vert_uv_pos,
+		vert_uv_no_pos,
 	}
 
 	switch type {
@@ -1734,6 +1746,8 @@ append_subtriangles_2 :: proc(
 			at_border[sleeve_1_idx] ? edge_uv(inside) : full_uv(inside),
 			full_uv(inside),
 			full_uv(inside),
+			// vert_uv(inside),
+			// vert_uv(inside),
 		}
 
 		append(dest_dyn, ..triangles[:])
@@ -1752,12 +1766,16 @@ append_subtriangles_2 :: proc(
 
 		triangles := [4]Triangle {
 			{m1, m2, m3},
-			{m1, b, m2},
-			{m2, c, m3},
-			{m3, a, m1},
+			{m2, m1, b},
+			{m3, m2, c},
+			{m1, m3, a},
 		}
 		uvs := [4]TriangleUV {
+			// vert_uv(inside),
 			full_uv(inside),
+			// vert_uv(inside),
+			// vert_uv(inside),
+			// vert_uv(inside),
 			full_uv(inside),
 			full_uv(inside),
 			full_uv(inside),
@@ -1807,13 +1825,21 @@ append_subtriangles_2 :: proc(
 		}
 		any_at_border := amount_at_border > 0
 
-		any_at_border &&= len(constraint_edges) > 0
-
-		append(
-			uvs_dyn,
-			any_at_border ? edge_uv((border_idx + 2) % 3, inside) : full_uv(inside),
-		)
-
+		if any_at_border && len(constraint_edges) > 0 {
+		    append(uvs_dyn, edge_uv((border_idx + 2) % 3, inside))
+		} else {
+		append(uvs_dyn, full_uv(inside))
+		}
+		// switch amount_at_border {
+		// case 1:
+		// 	append(uvs_dyn, vert_uv(border_idx, inside))
+		// case 2:
+		// 	if len(constraint_edges) > 0 {
+		// 		append(uvs_dyn, edge_uv((border_idx + 2) % 3, inside))
+		// 	}
+		// case:
+		// 	append(uvs_dyn, full_uv(inside))
+		// }
 	case .curve:
 		off_curve_vert := 0
 		for on_curve[triangle[off_curve_vert]] do off_curve_vert += 1
@@ -1997,7 +2023,10 @@ append_triangles_2 :: proc(
 				before %%= 3
 
 				new_uv[before].uv = {0, 0}
-				new_uv[off_curve_idx].uv = {0.5, 0}
+				new_y: f32 = -0.1
+                // new_y = -1
+                new_y = 0
+				new_uv[off_curve_idx].uv = {0.5, new_y}
 				new_uv[after].uv = {1, 1}
 				if inner_edge {
 					new_uv[0].z = false

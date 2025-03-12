@@ -39,6 +39,7 @@ b: [3]utils.Vec2f = {
 selected_vert := 0
 font_size: f32 = 25
 font_smoothness: f32 = 1
+inside_val: f32 = 1
 
 multisample := false
 toggle_multisample := false
@@ -200,8 +201,7 @@ main :: proc() {
 
 	{
 		glyfs, metrics, info := ttf.parse_ttf(
-			// "assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",
-			"assets/fonts/JetBrains/JetBrainsMono-Light.ttf",
+			"assets/fonts/JetBrains/JetBrainsMono-Light.ttf", // "assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",
 			// "assets/fonts/IosevkaTermNerdFontMono-Light.ttf",
 			// "assets/fonts/IosevkaCustom-Light.ttf",
 		)
@@ -493,36 +493,58 @@ update :: proc() {
 		log.debug("next selected vert", selected_vert)
 	}
 
+	next_y: f32 = 100
+
 	UI.do_slider(
 		"Font Size",
-		Rect({{20, 100}, {200, 50}}),
+		Rect({{20, next_y}, {200, 50}}),
 		&font_size,
 		1,
 		100,
 		3,
 	)
+	next_y += 70
 
 	UI.do_slider(
 		"Font Smoothness",
-		Rect({{20, 170}, {200, 50}}),
+		Rect({{20, next_y}, {200, 50}}),
 		&font_smoothness,
 		0,
 		3,
 		4,
 	)
 
-    if UI.do_button("Toggle MSAA", Rect({{240, 170}, {100, 50}}), 5) {
-        if multisample do gl.Enable(gl.MULTISAMPLE)
-        else do gl.Disable(gl.MULTISAMPLE)
+	builder := strings.builder_make(context.temp_allocator)
+	strings.write_f32(&builder, font_smoothness, 'f')
+	UI.do_text(strings.to_string(builder), Rect({{240, next_y}, {50, 50}}))
+	next_y += 70
 
-        multisample = !multisample
-    }
+	UI.do_slider(
+		"Inside Val",
+		Rect({{20, next_y}, {200, 50}}),
+		&inside_val,
+		0,
+		1,
+		5,
+	)
 
-    if multisample {
-        UI.do_text("On", Rect{{360, 170}, {50, 50}})
-    } else {
-        UI.do_text("Off", Rect{{360, 170}, {50, 50}})
-    }
+    builder = strings.builder_make(context.temp_allocator)
+	strings.write_f32(&builder, inside_val, 'f')
+	UI.do_text(strings.to_string(builder), Rect({{240, next_y}, {50, 50}}))
+    next_y += 70
+
+	if UI.do_button("Toggle MSAA", Rect({{20, next_y}, {100, 50}}), 6) {
+		if multisample do gl.Enable(gl.MULTISAMPLE)
+		else do gl.Disable(gl.MULTISAMPLE)
+
+		multisample = !multisample
+	}
+
+	if multisample {
+		UI.do_text("On", Rect{{150, next_y}, {50, 50}})
+	} else {
+		UI.do_text("Off", Rect{{150, next_y}, {50, 50}})
+	}
 
 	update_time()
 }
@@ -595,7 +617,7 @@ render :: proc() {
 	// gl.DrawElements(gl.TRIANGLES, len(indices) * 3, gl.UNSIGNED_INT, nil)
 
 	UI.render(state.window.size, font_size, font_smoothness)
-	// render_glyf()
+	render_glyf()
 }
 
 render_glyf :: proc() {
@@ -615,48 +637,64 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ
 	// hello = "&"
 	// hello = "abcdefghijklmnop"
 
-	scale := utils.Vec2f{1 / state.window.size.x, 1 / state.window.size.y}
-	scale *= 0.02 * font_size
-	scale *= 1
-	// scale: f32 = 0.001
-	utils.set_val(font, "scale", scale)
-	utils.set_val(font, "color", utils.Vec3f{0, 0, 0})
-	utils.set_val(font, "selected_vert", i32(selected_vert))
+	screen_scale :=
+		utils.Vec2f{1 / state.window.size.x, 1 / state.window.size.y} * 2
 
-	translation_before_scaling := utils.Vec2f{}
-	translation_after_scaling := utils.Vec2f{-1 - f32(selected_vert) * 0, -0}
+	utils.set_val(font, "inside_val", inside_val)
+	utils.set_val(font, "screen_scale", screen_scale)
+	utils.set_val(font, "smoothness", font_smoothness)
+
+	pts: f32 = font_size * 10
+	font_size_mult := pts / f32(ttf_info.y_max - ttf_info.y_min)
+	utils.set_val(font, "font_size_mult", font_size_mult)
+
+	utils.set_val(font, "color", utils.Vec3f{0, 0, 0})
+
+	non_scaled_translation := utils.Vec2f{200, 400}
+	scaled_translation := utils.Vec2f{-1, 1}
 
 	for char in hello {
-		if char == '\n' {
-			translation_before_scaling.x = 0
-			translation_before_scaling.y -= 1100
-			continue
-		}
-		// char := 0
-		this_glyf_info := glyf_info[char %% 128]
-		this_glyf_metrics := glyf_metrics[char %% 128]
-		translation_before_scaling.x += f32(
-			this_glyf_metrics.hor_metric.adv_width,
-		)
-		utils.set_val(
+		UI.draw_letter(
+			char,
 			font,
-			"translation_before_scaling",
-			translation_before_scaling,
-		)
-		utils.set_val(
-			font,
-			"translation_after_scaling",
-			translation_after_scaling,
+			font_size_mult,
+			&non_scaled_translation,
+			&scaled_translation,
+			glyf_info[char],
+			glyf_metrics[char],
 		)
 
-		utils.set_val(font, "vertex_offset", i32(this_glyf_info.vertex_offset))
-		utils.set_val(
-			font,
-			"triangle_offset",
-			i32(this_glyf_info.triangle_offset),
-		)
-		gl.DrawArrays(gl.TRIANGLES, 0, i32(this_glyf_info.triangle_count) * 3)
-		// gl.DrawArrays(gl.POINTS, 0, i32(this_glyf_info.triangle_count) * 3)
-		// break
+
+		// if char == '\n' {
+		// 	translation_before_scaling.x = 0
+		// 	translation_before_scaling.y -= 1100
+		// 	continue
+		// }
+		// // char := 0
+		// this_glyf_info := glyf_info[char %% 128]
+		// this_glyf_metrics := glyf_metrics[char %% 128]
+		// translation_before_scaling.x += f32(
+		// 	this_glyf_metrics.hor_metric.adv_width,
+		// )
+		// utils.set_val(
+		// 	font,
+		// 	"translation_before_scaling",
+		// 	translation_before_scaling,
+		// )
+		// utils.set_val(
+		// 	font,
+		// 	"translation_after_scaling",
+		// 	translation_after_scaling,
+		// )
+
+		// utils.set_val(font, "vertex_offset", i32(this_glyf_info.vertex_offset))
+		// utils.set_val(
+		// 	font,
+		// 	"triangle_offset",
+		// 	i32(this_glyf_info.triangle_offset),
+		// )
+		// gl.DrawArrays(gl.TRIANGLES, 0, i32(this_glyf_info.triangle_count) * 3)
+		// // gl.DrawArrays(gl.POINTS, 0, i32(this_glyf_info.triangle_count) * 3)
+		// // break
 	}
 }

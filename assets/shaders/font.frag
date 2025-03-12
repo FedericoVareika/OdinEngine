@@ -27,6 +27,7 @@ void main() {
 
     // alpha = step(0, -dist);
 
+    // frag_color = vec4(color, 1-abs(dist));
+    // frag_color = vec4(color, abs(dist));
     frag_color = vec4(color, alpha);
-    // frag_color = vec4(color, 1);
 }

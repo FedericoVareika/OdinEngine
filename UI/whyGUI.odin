@@ -258,6 +258,7 @@ render :: proc(
 			screen_scale :=
 				utils.Vec2f{1 / screen_size.x, 1 / screen_size.y} * 2
 
+			utils.set_val(font, "inside_val", f32(1))
 			utils.set_val(font, "screen_scale", screen_scale)
             utils.set_val(font, "smoothness", font_smoothness)
 
