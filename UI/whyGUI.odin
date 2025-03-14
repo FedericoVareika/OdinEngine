@@ -204,14 +204,14 @@ update :: proc(
 draw_letter :: proc(
 	letter: rune,
 	font: u32,
-	font_size_mult: f32,
+    pts, font_size_mult: f32,
 	non_scaled_translation, scaled_translation: ^utils.Vec2f,
 	glyf_info: utils.GlyfInfo,
 	glyf_metrics: ttf.GlyfMetrics,
 ) {
 	if letter == '\n' {
 		non_scaled_translation.x = 0
-		non_scaled_translation.y += 1100
+		non_scaled_translation.y += pts * 0.8
 		return
 	}
 
@@ -281,6 +281,7 @@ render :: proc(
 				draw_letter(
 					letter,
 					font,
+                    pts,
 					font_size_mult,
 					&non_scaled_translation,
 					&scaled_translation,

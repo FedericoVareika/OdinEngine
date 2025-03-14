@@ -87,7 +87,7 @@ main :: proc() {
 		gl.load_up_to(3, 3, glfw.gl_set_proc_address)
 		gl.Enable(gl.DEPTH_TEST)
 		gl.Enable(gl.BLEND)
-		gl.Disable(gl.MULTISAMPLE)
+		// gl.Disable(gl.MULTISAMPLE)
 		gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
 		// Enable v-sync
@@ -633,7 +633,7 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ
 `
 
 
-	hello = "The quick brown fox jumps over the lazy dog"
+	// hello = "The quick brown fox jumps over the lazy dog"
 	// hello = "&"
 	// hello = "abcdefghijklmnop"
 
@@ -650,13 +650,14 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ
 
 	utils.set_val(font, "color", utils.Vec3f{0, 0, 0})
 
-	non_scaled_translation := utils.Vec2f{200, 400}
+	non_scaled_translation := utils.Vec2f{200, 0}
 	scaled_translation := utils.Vec2f{-1, 1}
 
 	for char in hello {
 		UI.draw_letter(
 			char,
 			font,
+            pts,
 			font_size_mult,
 			&non_scaled_translation,
 			&scaled_translation,

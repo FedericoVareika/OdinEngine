@@ -17,9 +17,10 @@ void main() {
     float dist = (uv.x * uv.x - uv.y);
     float pixel_size = length(vec2(dFdx(dist), dFdy(dist)));
     dist *= inner;
-    dist -= pixel_size * 0.5;
+    dist -= pixel_size * smoothness * 0.5;
+
     // pixel_size = length(vec2(dFdx(dist), dFdy(dist)));
-    float alpha = (-dist) / (pixel_size * smoothness);
+    float alpha = - dist / (pixel_size * smoothness);
     // float alpha = (1.0 - dist); 
 
     // vec2 gradient = vec2(2 * uv.x, -1);
@@ -27,7 +28,7 @@ void main() {
 
     // alpha = step(0, -dist);
 
-    // frag_color = vec4(color, 1-abs(dist));
+    // frag_color = vec4(color, 1-dist);
     // frag_color = vec4(color, abs(dist));
     frag_color = vec4(color, alpha);
 }
