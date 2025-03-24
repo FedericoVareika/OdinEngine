@@ -71,7 +71,7 @@ restructure_overlapping_curves :: proc(
 				DelVert{c.x, c.y},
 			) {
 				continue
-			}
+			} 
 
 			for possible_overlap, j in coords {
 				if u16(j) == i ||

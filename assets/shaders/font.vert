@@ -30,6 +30,8 @@ uniform vec2 screen_scale;
 uniform vec2 non_scaled_translation; 
 uniform vec2 scaled_translation; 
 
+uniform float pixel_size;
+
 out vec2 uv;
 out float inner;
 
@@ -43,6 +45,7 @@ void main() {
     vec2 vertex = vertices[index];
     vertex *= font_size_mult;
     vertex += vec2(non_scaled_translation.x, -1 * non_scaled_translation.y); 
+    // vertex *= screen_scale + pixel_size;
     vertex *= screen_scale;
     vertex += scaled_translation;
 

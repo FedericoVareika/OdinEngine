@@ -14,6 +14,29 @@ float linearstep(float edge0, float edge1, float x) {
 
 void main() {
     // uv.z is 1 if outer curve, or -1 if inner curve
+    float g = (uv.x * uv.x - uv.y);
+    g *= inner;
+
+    float delta_g = sqrt(dFdx(g) * dFdx(g) + dFdy(g) * dFdy(g));
+    float dist = g ;
+    if (delta_g > 0) {
+        dist /= delta_g;
+    }
+
+    float pixel_size = length(vec2(dFdx(dist), dFdy(dist)));
+    // dist *= inner;
+    dist -= pixel_size * smoothness * 0.5;
+
+    // float alpha = - dist / (pixel_size * smoothness);
+    float alpha = - dist / smoothness;
+    if (alpha < 0.005f)
+        discard;
+    frag_color = vec4(color, alpha);
+}
+
+/*
+ 
+    // uv.z is 1 if outer curve, or -1 if inner curve
     float dist = (uv.x * uv.x - uv.y);
     float pixel_size = length(vec2(dFdx(dist), dFdy(dist)));
     dist *= inner;
@@ -30,5 +53,7 @@ void main() {
 
     // frag_color = vec4(color, 1-dist);
     // frag_color = vec4(color, abs(dist));
+    if (alpha < 0.005f)
+        discard;
     frag_color = vec4(color, alpha);
-}
+ * */

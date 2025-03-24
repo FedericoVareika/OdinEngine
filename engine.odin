@@ -88,7 +88,11 @@ main :: proc() {
 		gl.Enable(gl.DEPTH_TEST)
 		gl.Enable(gl.BLEND)
 		// gl.Disable(gl.MULTISAMPLE)
+		gl.Disable(gl.MULTISAMPLE)
+        glfw.WindowHint(glfw.SAMPLES, 16)
+
 		gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+		// gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
 		// Enable v-sync
 		glfw.SwapInterval(1)
@@ -201,8 +205,8 @@ main :: proc() {
 
 	{
 		glyfs, metrics, info := ttf.parse_ttf(
-			"assets/fonts/JetBrains/JetBrainsMono-Light.ttf", // "assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",
-			// "assets/fonts/IosevkaTermNerdFontMono-Light.ttf",
+			// "assets/fonts/JetBrains/JetBrainsMono-Light.ttf", // "assets/fonts/JetBrains/JetBrainsMono-Regular.ttf",
+			"assets/fonts/IosevkaTermNerdFontMono-Light.ttf",
 			// "assets/fonts/IosevkaCustom-Light.ttf",
 		)
 		ttf_info = info
@@ -503,6 +507,15 @@ update :: proc() {
 		100,
 		3,
 	)
+
+    if UI.do_button("+", Rect({{120, next_y}, {50, 50}}), 30) do font_size += 1
+    if UI.do_button("-", Rect({{180, next_y}, {50, 50}}), 31) do font_size -= 1
+
+	next_y += 70
+
+	builder := strings.builder_make(context.temp_allocator)
+	strings.write_int(&builder, int(font_size), 10)
+	UI.do_text(strings.to_string(builder), Rect({{240, next_y}, {50, 50}}))
 	next_y += 70
 
 	UI.do_slider(
@@ -510,11 +523,11 @@ update :: proc() {
 		Rect({{20, next_y}, {200, 50}}),
 		&font_smoothness,
 		0,
-		3,
+		100,
 		4,
 	)
 
-	builder := strings.builder_make(context.temp_allocator)
+	builder = strings.builder_make(context.temp_allocator)
 	strings.write_f32(&builder, font_smoothness, 'f')
 	UI.do_text(strings.to_string(builder), Rect({{240, next_y}, {50, 50}}))
 	next_y += 70
@@ -534,7 +547,7 @@ update :: proc() {
     next_y += 70
 
 	if UI.do_button("Toggle MSAA", Rect({{20, next_y}, {100, 50}}), 6) {
-		if multisample do gl.Enable(gl.MULTISAMPLE)
+		if !multisample do gl.Enable(gl.MULTISAMPLE)
 		else do gl.Disable(gl.MULTISAMPLE)
 
 		multisample = !multisample
@@ -542,6 +555,12 @@ update :: proc() {
 
 	if multisample {
 		UI.do_text("On", Rect{{150, next_y}, {50, 50}})
+        if UI.do_button("4x", Rect{{220, next_y}, {25, 50}}, 7) {
+            glfw.WindowHint(glfw.SAMPLES, 4)
+        }
+        if UI.do_button("16x", Rect{{250, next_y}, {25, 50}}, 8) {
+            glfw.WindowHint(glfw.SAMPLES, 16)
+        }
 	} else {
 		UI.do_text("Off", Rect{{150, next_y}, {50, 50}})
 	}
@@ -616,6 +635,10 @@ render :: proc() {
 
 	// gl.DrawElements(gl.TRIANGLES, len(indices) * 3, gl.UNSIGNED_INT, nil)
 
+	font := state.graphics.shaders["font"]
+	gl.UseProgram(font)
+    utils.set_val(font, "pixel_size", 2 / (state.window.size.y))
+    gl.UseProgram(0)
 	UI.render(state.window.size, font_size, font_smoothness)
 	render_glyf()
 }
@@ -632,8 +655,10 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ
 {[(<>)]}+?'":|,~\
 `
 
+    hello = ""
 
-	// hello = "The quick brown fox jumps over the lazy dog"
+
+	hello = "The quick brown fox jumps over the lazy dog"
 	// hello = "&"
 	// hello = "abcdefghijklmnop"
 
@@ -650,7 +675,7 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ
 
 	utils.set_val(font, "color", utils.Vec3f{0, 0, 0})
 
-	non_scaled_translation := utils.Vec2f{200, 0}
+	non_scaled_translation := utils.Vec2f{200, 200}
 	scaled_translation := utils.Vec2f{-1, 1}
 
 	for char in hello {
@@ -664,38 +689,5 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ
 			glyf_info[char],
 			glyf_metrics[char],
 		)
-
-
-		// if char == '\n' {
-		// 	translation_before_scaling.x = 0
-		// 	translation_before_scaling.y -= 1100
-		// 	continue
-		// }
-		// // char := 0
-		// this_glyf_info := glyf_info[char %% 128]
-		// this_glyf_metrics := glyf_metrics[char %% 128]
-		// translation_before_scaling.x += f32(
-		// 	this_glyf_metrics.hor_metric.adv_width,
-		// )
-		// utils.set_val(
-		// 	font,
-		// 	"translation_before_scaling",
-		// 	translation_before_scaling,
-		// )
-		// utils.set_val(
-		// 	font,
-		// 	"translation_after_scaling",
-		// 	translation_after_scaling,
-		// )
-
-		// utils.set_val(font, "vertex_offset", i32(this_glyf_info.vertex_offset))
-		// utils.set_val(
-		// 	font,
-		// 	"triangle_offset",
-		// 	i32(this_glyf_info.triangle_offset),
-		// )
-		// gl.DrawArrays(gl.TRIANGLES, 0, i32(this_glyf_info.triangle_count) * 3)
-		// // gl.DrawArrays(gl.POINTS, 0, i32(this_glyf_info.triangle_count) * 3)
-		// // break
 	}
 }

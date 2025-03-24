@@ -1627,7 +1627,8 @@ append_subtriangles_2 :: proc(
 	end_contours := state.end_contours
 	on_curve := state.on_curve
 
-	inside_val :: 0.5
+	// inside_val :: 0.5
+	inside_val :: 1
 
 	full_uv :: proc(flag: bool) -> TriangleUV {
 		return TriangleUV {
@@ -1875,26 +1876,6 @@ append_subtriangles_2 :: proc(
 			append(uvs_dyn, vert_uv(non_bounding_idx, inside))
 		}
 
-	// if any_at_border && len(constraint_edges) > 0 {
-	// append(dest_dyn, triangle)
-	//     append(uvs_dyn, edge_uv((border_idx + 2) % 3, inside))
-	// } else {
-	// append(dest_dyn, triangle)
-	// append(uvs_dyn, full_uv(inside))
-	// }
-	// switch amount_at_border {
-	// case 2:
-	// 	append(uvs_dyn, vert_uv((border_idx + 1) % 3, inside))
-	// case 1:
-	// 	if len(constraint_edges) > 0 {
-	// 		append(uvs_dyn, edge_uv((border_idx + 2) % 3, inside))
-	// 	} else {
-	// 		append(uvs_dyn, full_uv(inside))
-	// 	}
-	// case:
-	// 	// append(uvs_dyn, vert_uv((border_idx + 1) % 3, inside))
-	// 	append(uvs_dyn, full_uv(inside))
-	// }
 	case .curve:
 		off_curve_vert := 0
 		for on_curve[triangle[off_curve_vert]] do off_curve_vert += 1
