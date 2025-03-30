@@ -1574,6 +1574,7 @@ chordal_edge_triangulation :: proc(
 				has_bound_edge,
 				is_curve,
 			)
+
 			append_subtriangles(
 				all_verts,
 				dest_dyn,
@@ -1613,6 +1614,8 @@ A: f32 : #config(A, 1)
 // 	}
 // }
 
+inside_val :: #config(I, 0.01)
+
 append_subtriangles_2 :: proc(
 	all_verts: ^[dynamic]Vec2f,
 	dest_dyn: ^[dynamic]Triangle,
@@ -1628,7 +1631,7 @@ append_subtriangles_2 :: proc(
 	on_curve := state.on_curve
 
 	// inside_val :: 0.5
-	inside_val :: 1
+	// inside_val :: 1
 
 	full_uv :: proc(flag: bool) -> TriangleUV {
 		return TriangleUV {
@@ -1828,7 +1831,7 @@ append_subtriangles_2 :: proc(
 		append(uvs_dyn, ..uvs[:])
 
 	case .bounding:
-		do_bounding :: #config(B, false)
+		do_bounding :: #config(B, true)
 		if !do_bounding do break
 		amount_at_border := 0
 		border_idx := 0
@@ -1840,6 +1843,7 @@ append_subtriangles_2 :: proc(
 		}
 		any_at_border := amount_at_border > 0
 
+		amount_off_curve := 0
 		amount_at_bounding := 0
 		bounding_idx := 0
 		non_bounding_idx := 0
@@ -1848,20 +1852,27 @@ append_subtriangles_2 :: proc(
 				amount_at_bounding += 1
 				bounding_idx = i
 			} else {
+				if !state.on_curve[t] do amount_off_curve += 1
 				non_bounding_idx = i
 			}
 		}
 
+		if amount_off_curve > 0 do break
 		if amount_at_bounding == 1 && amount_at_border == 0 {
-			assert(len(midpoint_indices) > 0)
-			m := midpoint_indices[0]
-			a := triangle[bounding_idx]
-			b := triangle[(bounding_idx + 1) % 3]
-			c := triangle[(bounding_idx + 2) % 3]
-			triangles := [2]Triangle{{a, b, u32(m)}, {a, u32(m), c}}
-			uvs := [2]TriangleUV{vert_uv(1, inside), vert_uv(2, inside)}
-			append(dest_dyn, ..triangles[:])
-			append(uvs_dyn, ..uvs[:])
+			if len(midpoint_indices) > 0 {
+				assert(len(midpoint_indices) > 0)
+				m := midpoint_indices[0]
+				a := triangle[bounding_idx]
+				b := triangle[(bounding_idx + 1) % 3]
+				c := triangle[(bounding_idx + 2) % 3]
+				triangles := [2]Triangle{{a, b, u32(m)}, {a, u32(m), c}}
+				uvs := [2]TriangleUV{vert_uv(1, inside), vert_uv(2, inside)}
+				append(dest_dyn, ..triangles[:])
+				append(uvs_dyn, ..uvs[:])
+			} else {
+				append(dest_dyn, triangle)
+				append(uvs_dyn, edge_uv((border_idx + 1) %% 3, inside))
+			}
 		} else if any_at_border {
 			assert(amount_at_border == 1)
 			append(dest_dyn, triangle)
