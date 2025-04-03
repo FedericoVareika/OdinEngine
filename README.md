@@ -1,6 +1,6 @@
 This project is my first dive into OpenGL and modern computer graphics, following [learnopengl.com](https://learnopengl.com/) . The idea is to create a graphics engine completely from scratch using OdinLang.
 
-The engine is very rudimentary, as most of my time has been spent developing its font rendering. 
+The engine is very rudimentary, as most of my time has been spent developing its font rendering for an immediate mode gui. 
 
 ### Font rendering
 For this engine's font rendering I chose to follow the research paper: [Resolution Independent Curve Rendering using Programmable Graphics Hardware, 2005](https://www.microsoft.com/en-us/research/wp-content/uploads/2005/01/p1000-loop.pdf).
