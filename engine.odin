@@ -39,7 +39,9 @@ b: [3]utils.Vec2f = {
 selected_vert := 0
 font_size: f32 = 25
 font_smoothness: f32 = 1
-inside_val: f32 = 1
+// inside_val: f32 = 1
+cutoff: f32 = 0.005
+subpixel: bool = true
 
 multisample := false
 toggle_multisample := false
@@ -60,12 +62,13 @@ main :: proc() {
 
 		when ODIN_OS == .Darwin { 	// Note(fede): some features probably are not compatible with macOS
 			WindowHint(CONTEXT_VERSION_MAJOR, 3)
+            WindowHint(CONTEXT_VERSION_MINOR, 3)
 			WindowHint(OPENGL_FORWARD_COMPAT, gl.TRUE)
 		} else {
 			WindowHint(CONTEXT_VERSION_MAJOR, 4)
+            WindowHint(CONTEXT_VERSION_MINOR, 5)
 		}
 
-		WindowHint(CONTEXT_VERSION_MINOR, 3)
 		WindowHint(OPENGL_PROFILE, OPENGL_CORE_PROFILE)
 		WindowHint(SAMPLES, 4)
 	}
@@ -514,7 +517,8 @@ update :: proc() {
 	next_y += 70
 
 	builder := strings.builder_make(context.temp_allocator)
-	strings.write_int(&builder, int(font_size), 10)
+	// strings.write_int(&builder, int(font_size), 10)
+	strings.write_f32(&builder, font_size, 'f')
 	UI.do_text(strings.to_string(builder), Rect({{240, next_y}, {50, 50}}))
 	next_y += 70
 
@@ -532,17 +536,17 @@ update :: proc() {
 	UI.do_text(strings.to_string(builder), Rect({{240, next_y}, {50, 50}}))
 	next_y += 70
 
-	UI.do_slider(
-		"Inside Val",
-		Rect({{20, next_y}, {200, 50}}),
-		&inside_val,
-		0,
-		1,
-		5,
-	)
+	// UI.do_slider(
+	// 	"Inside Val",
+	// 	Rect({{20, next_y}, {200, 50}}),
+	// 	&inside_val,
+	// 	0,
+	// 	1,
+	// 	5,
+	// )
 
     builder = strings.builder_make(context.temp_allocator)
-	strings.write_f32(&builder, inside_val, 'f')
+	// strings.write_f32(&builder, inside_val, 'f')
 	UI.do_text(strings.to_string(builder), Rect({{240, next_y}, {50, 50}}))
     next_y += 70
 
@@ -555,15 +559,38 @@ update :: proc() {
 
 	if multisample {
 		UI.do_text("On", Rect{{150, next_y}, {50, 50}})
-        if UI.do_button("4x", Rect{{220, next_y}, {25, 50}}, 7) {
+        if UI.do_button("4x", Rect{{220, next_y}, {25, 50}}, 61) {
             glfw.WindowHint(glfw.SAMPLES, 4)
         }
-        if UI.do_button("16x", Rect{{250, next_y}, {25, 50}}, 8) {
+        if UI.do_button("16x", Rect{{250, next_y}, {25, 50}}, 62) {
             glfw.WindowHint(glfw.SAMPLES, 16)
         }
 	} else {
 		UI.do_text("Off", Rect{{150, next_y}, {50, 50}})
 	}
+
+    next_y += 70
+
+	if UI.do_button("Toggle Subpixel", Rect({{20, next_y}, {100, 50}}), 7) {
+		subpixel = !subpixel
+	}
+
+	if subpixel do UI.do_text("On", Rect{{150, next_y}, {50, 50}})
+	else do UI.do_text("Off", Rect{{150, next_y}, {50, 50}})
+
+    next_y += 70
+
+    UI.do_slider("Cutoff", 
+		Rect({{20, next_y}, {200, 50}}),
+		&cutoff,
+		0,
+		1,
+		8,
+    )
+
+    builder = strings.builder_make(context.temp_allocator)
+	strings.write_f32(&builder, cutoff, 'f')
+	UI.do_text(strings.to_string(builder), Rect({{240, next_y}, {50, 50}}))
 
 	update_time()
 }
@@ -583,7 +610,8 @@ update_time :: proc() {
 
 render :: proc() {
 	using gl
-	gl.ClearColor(0.96, 0.93, 0.89, 1)
+	// gl.ClearColor(0.96, 0.93, 0.89, 1)
+	gl.ClearColor(1, 1, 1, 1)
 	// gl.ClearColor(0, 0, 0, 1)
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
@@ -638,8 +666,16 @@ render :: proc() {
 	font := state.graphics.shaders["font"]
 	gl.UseProgram(font)
     utils.set_val(font, "pixel_size", 2 / (state.window.size.y))
+    utils.set_val(font, "cutoff", cutoff)
+    utils.set_val(font, "subpixel", subpixel)
     gl.UseProgram(0)
+
 	UI.render(state.window.size, font_size, font_smoothness)
+	gl.UseProgram(font)
+    utils.set_val(font, "pixel_size", 2 / (state.window.size.y))
+    utils.set_val(font, "cutoff", cutoff)
+    utils.set_val(font, "subpixel", subpixel)
+    gl.UseProgram(0)
 	render_glyf()
 }
 
@@ -665,7 +701,7 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ
 	screen_scale :=
 		utils.Vec2f{1 / state.window.size.x, 1 / state.window.size.y} * 2
 
-	utils.set_val(font, "inside_val", inside_val)
+	utils.set_val(font, "inside_val", 1.0)
 	utils.set_val(font, "screen_scale", screen_scale)
 	utils.set_val(font, "smoothness", font_smoothness)
 
